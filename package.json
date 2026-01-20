@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test:dry": "bun tests/dry-run.test.ts",
-    "test:sol": "bun tests/sol-mainnet.test.ts"
+    "test:sol": "bun tests/sol-mainnet.test.ts",
+    "test:recover": "bun tests/sol-recover.test.ts",
+    "test:usdc": "bun tests/usdc-mainnet.test.ts"
   },
   "dependencies": {
     "@solana/wallet-adapter-base": "^0.9.27",
