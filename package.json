@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:dry": "bun tests/dry-run.test.ts",
+    "test:sol": "bun tests/sol-mainnet.test.ts"
   },
   "dependencies": {
     "@solana/wallet-adapter-base": "^0.9.27",
@@ -16,6 +18,7 @@
     "@solana/web3.js": "^1.98.4",
     "@supabase/supabase-js": "^2.90.1",
     "bs58": "^6.0.0",
+    "dotenv": "^17.2.3",
     "next": "16.1.1",
     "privacycash": "^1.1.10",
     "react": "19.2.3",
@@ -31,6 +34,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }
