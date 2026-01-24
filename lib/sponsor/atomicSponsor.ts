@@ -3,22 +3,20 @@ import {
   Keypair,
   PublicKey,
   VersionedTransaction,
-  TransactionMessage,
-  SystemProgram,
-  Transaction,
-  AddressLookupTableAccount,
   LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
-import { depositSPL, deposit, EncryptionService } from "privacycash/utils";
+import { EncryptionService } from "privacycash/utils";
 import { WasmFactory } from "@lightprotocol/hasher.rs";
 import { LocalStorage } from "node-localstorage";
 import path from "node:path";
 
-const storage = new LocalStorage(path.join(process.cwd(), "cache"));
+// Import our sponsored deposit functions (no balance checks, with feePayer support)
+import {
+  sponsoredDepositSPL,
+  sponsoredDepositSOL,
+} from "../privacycash/sponsoredDeposit";
 
-// Minimum SOL required by SDK for fee buffer
-const MIN_SOL_FOR_SDK_CHECK = 0.002;
-const MIN_LAMPORTS_FOR_SDK_CHECK = MIN_SOL_FOR_SDK_CHECK * LAMPORTS_PER_SOL;
+const storage = new LocalStorage(path.join(process.cwd(), "cache"));
 
 export interface AtomicSponsoredDepositParams {
   connection: Connection;
@@ -32,15 +30,13 @@ export interface AtomicSponsoredDepositParams {
 
 export interface AtomicSponsoredDepositResult {
   tx: string;
-  prefundTx?: string;
 }
 
 /**
- * Creates a transaction signer that makes the sponsor the fee payer.
+ * Creates a transaction signer for atomic sponsorship.
  *
- * This is the core of atomic sponsorship - the sponsor pays the transaction fee,
- * but the user must also sign to authorize the deposit. If either party doesn't
- * sign, the transaction cannot be submitted.
+ * Since we now build the transaction with the sponsor as fee payer from the start,
+ * we just need both parties to sign. No decompile/recompile needed.
  *
  * Security properties:
  * - Sponsor's fee payment is atomic with user's deposit
@@ -48,87 +44,25 @@ export interface AtomicSponsoredDepositResult {
  * - If transaction fails, sponsor's SOL is not consumed
  */
 function createAtomicTransactionSigner(
-  connection: Connection,
   sponsorKeypair: Keypair,
   userKeypair: Keypair
 ) {
   return async (tx: VersionedTransaction): Promise<VersionedTransaction> => {
-    // Get the lookup tables used in the original transaction
-    const lookupTableAccounts = await getLookupTableAccounts(
-      connection,
-      tx.message.addressTableLookups
-    );
-
-    // Decompile the original message to get instructions
-    const decompiledMessage = TransactionMessage.decompile(tx.message, {
-      addressLookupTableAccounts: lookupTableAccounts,
-    });
-
-    // Rebuild the message with sponsor as fee payer
-    const newMessage = new TransactionMessage({
-      payerKey: sponsorKeypair.publicKey,
-      recentBlockhash: decompiledMessage.recentBlockhash,
-      instructions: decompiledMessage.instructions,
-    }).compileToV0Message(lookupTableAccounts);
-
-    // Create new transaction and sign with both parties
-    const newTx = new VersionedTransaction(newMessage);
-
-    // Sign with sponsor (fee payer)
-    newTx.sign([sponsorKeypair]);
+    // Sign with sponsor (fee payer - already set as payerKey in transaction)
+    tx.sign([sponsorKeypair]);
 
     // Sign with user (token owner / deposit authorizer)
-    newTx.sign([userKeypair]);
+    tx.sign([userKeypair]);
 
-    return newTx;
+    return tx;
   };
-}
-
-/**
- * Pre-funds a wallet with the minimum SOL needed to pass SDK checks.
- *
- * This is necessary because the SDK checks balances before building the transaction.
- * The pre-fund amount is small (max 0.002 SOL) and is the only part not protected
- * by atomicity.
- *
- * For burner wallets we control, this is safe.
- * For external users, this represents a small acceptable risk.
- */
-async function ensureMinimumBalance(
-  connection: Connection,
-  sponsorKeypair: Keypair,
-  targetPublicKey: PublicKey
-): Promise<string | undefined> {
-  const balance = await connection.getBalance(targetPublicKey);
-
-  if (balance >= MIN_LAMPORTS_FOR_SDK_CHECK) {
-    return undefined;
-  }
-
-  const needed = MIN_LAMPORTS_FOR_SDK_CHECK - balance;
-  console.log(
-    `Pre-funding ${needed / LAMPORTS_PER_SOL} SOL to ${targetPublicKey.toBase58().slice(0, 8)}...`
-  );
-
-  const tx = new Transaction().add(
-    SystemProgram.transfer({
-      fromPubkey: sponsorKeypair.publicKey,
-      toPubkey: targetPublicKey,
-      lamports: needed,
-    })
-  );
-
-  const signature = await connection.sendTransaction(tx, [sponsorKeypair]);
-  await connection.confirmTransaction(signature, "confirmed");
-
-  return signature;
 }
 
 /**
  * Performs an atomic sponsored SPL deposit.
  *
  * Security model:
- * - Pre-fund (if needed): Max 0.002 SOL at risk - small, acceptable
+ * - NO pre-funding needed - fully atomic
  * - Transaction fee: Paid atomically by sponsor - fully protected
  * - Deposit: Only happens if sponsor pays fee - fully protected
  *
@@ -148,20 +82,14 @@ export async function atomicSponsoredDeposit(
     referrer,
   } = params;
 
-  // Ensure user has minimum balance for SDK check
-  const prefundTx = await ensureMinimumBalance(
-    connection,
-    sponsorKeypair,
-    userKeypair.publicKey
-  );
-
   // Initialize encryption service with user's keypair
   const encryptionService = new EncryptionService();
   encryptionService.deriveEncryptionKeyFromWallet(userKeypair);
 
   const lightWasm = await WasmFactory.getInstance();
 
-  const result = await depositSPL({
+  // Use our sponsored deposit function - no pre-funding, sponsor pays directly
+  const result = await sponsoredDepositSPL({
     lightWasm,
     storage,
     keyBasePath: path.join(
@@ -176,24 +104,25 @@ export async function atomicSponsoredDeposit(
     base_units: baseUnits,
     amount,
     encryptionService,
-    transactionSigner: createAtomicTransactionSigner(
-      connection,
-      sponsorKeypair,
-      userKeypair
-    ),
+    transactionSigner: createAtomicTransactionSigner(sponsorKeypair, userKeypair),
     referrer,
     mintAddress,
     signer: userKeypair.publicKey,
+    feePayer: sponsorKeypair.publicKey, // Sponsor pays the fee
   });
 
   return {
     tx: result.tx,
-    prefundTx,
   };
 }
 
 /**
  * Performs an atomic sponsored SOL deposit.
+ *
+ * Security model:
+ * - NO pre-funding needed - fully atomic
+ * - Transaction fee: Paid atomically by sponsor - fully protected
+ * - Deposit: Only happens if sponsor pays fee - fully protected
  */
 export async function atomicSponsoredSolDeposit(params: {
   connection: Connection;
@@ -202,23 +131,15 @@ export async function atomicSponsoredSolDeposit(params: {
   lamports: number;
   referrer?: string;
 }): Promise<AtomicSponsoredDepositResult> {
-  const { connection, userKeypair, sponsorKeypair, lamports, referrer } =
-    params;
-
-  // For SOL deposits, user needs both the deposit amount AND fee
-  // We need to ensure they have the deposit amount (sponsored separately if needed)
-  const prefundTx = await ensureMinimumBalance(
-    connection,
-    sponsorKeypair,
-    userKeypair.publicKey
-  );
+  const { connection, userKeypair, sponsorKeypair, lamports, referrer } = params;
 
   const encryptionService = new EncryptionService();
   encryptionService.deriveEncryptionKeyFromWallet(userKeypair);
 
   const lightWasm = await WasmFactory.getInstance();
 
-  const result = await deposit({
+  // Use our sponsored deposit function - no pre-funding, sponsor pays directly
+  const result = await sponsoredDepositSOL({
     lightWasm,
     storage,
     keyBasePath: path.join(
@@ -232,49 +153,34 @@ export async function atomicSponsoredSolDeposit(params: {
     connection,
     amount_in_lamports: lamports,
     encryptionService,
-    transactionSigner: createAtomicTransactionSigner(
-      connection,
-      sponsorKeypair,
-      userKeypair
-    ),
+    transactionSigner: createAtomicTransactionSigner(sponsorKeypair, userKeypair),
     referrer,
     signer: userKeypair.publicKey,
+    feePayer: sponsorKeypair.publicKey, // Sponsor pays the fee
   });
 
   return {
     tx: result.tx,
-    prefundTx,
   };
 }
 
 /**
- * Helper function to fetch AddressLookupTableAccount objects from their addresses
- */
-async function getLookupTableAccounts(
-  connection: Connection,
-  lookups: readonly { accountKey: PublicKey }[]
-): Promise<AddressLookupTableAccount[]> {
-  const accounts: AddressLookupTableAccount[] = [];
-
-  for (const lookup of lookups) {
-    const result = await connection.getAddressLookupTable(lookup.accountKey);
-    if (result.value) {
-      accounts.push(result.value);
-    }
-  }
-
-  return accounts;
-}
-
-/**
  * Checks if a user needs sponsorship for a deposit.
- * Returns the amount of SOL needed, or 0 if no sponsorship needed.
+ * Returns the amount of SOL needed for gas, or 0 if no sponsorship needed.
+ *
+ * Note: With our new sponsored deposit functions, the user never needs SOL for gas.
+ * This function is kept for compatibility but will typically return 0 for SPL deposits
+ * since only the deposit amount matters, not gas.
  */
 export async function checkSponsorshipNeeded(
   connection: Connection,
   userPublicKey: PublicKey,
-  minSolRequired: number = MIN_SOL_FOR_SDK_CHECK
+  minSolRequired: number = 0
 ): Promise<number> {
+  if (minSolRequired === 0) {
+    return 0; // No SOL needed when sponsor pays gas
+  }
+
   const balance = await connection.getBalance(userPublicKey);
   const balanceInSol = balance / LAMPORTS_PER_SOL;
 
@@ -284,5 +190,3 @@ export async function checkSponsorshipNeeded(
 
   return minSolRequired - balanceInSol;
 }
-
-export { MIN_SOL_FOR_SDK_CHECK, MIN_LAMPORTS_FOR_SDK_CHECK };

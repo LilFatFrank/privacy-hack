@@ -64,7 +64,7 @@ export async function createPayment(
 
   const connection = new Connection(process.env.RPC_URL!);
 
-  let depositRes: { tx: string; prefundTx?: string };
+  let depositRes: { tx: string };
 
   if (token === "SOL") {
     // For SOL: sender sponsors the deposit, burner deposits SOL from sender's funding

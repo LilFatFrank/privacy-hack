@@ -1,9 +1,6 @@
 import { describe, it, expect, beforeAll } from "bun:test";
 import { Connection, Keypair } from "@solana/web3.js";
-import {
-  checkSponsorshipNeeded,
-  MIN_SOL_FOR_SDK_CHECK,
-} from "../lib/sponsor/atomicSponsor";
+import { checkSponsorshipNeeded } from "../lib/sponsor/atomicSponsor";
 import { loadSponsorWallet } from "../lib/sponsor/sponsorWallet";
 
 // Skip if no environment variables
@@ -20,9 +17,9 @@ describe("Atomic Sponsorship", () => {
   });
 
   describe("checkSponsorshipNeeded", () => {
-    it("should return 0 if user has enough SOL", async () => {
+    it("should return 0 when no minimum is specified (sponsor pays all gas)", async () => {
       if (SKIP_E2E) return;
-      // Sponsor should have enough SOL
+      // With our new sponsorship model, users don't need SOL for gas
       const needed = await checkSponsorshipNeeded(
         connection,
         sponsorKeypair.publicKey
@@ -30,14 +27,15 @@ describe("Atomic Sponsorship", () => {
       expect(needed).toBe(0);
     });
 
-    it("should return correct amount for empty wallet", async () => {
+    it("should return 0 for empty wallet (sponsor pays gas)", async () => {
       if (SKIP_E2E) return;
       const emptyWallet = Keypair.generate();
+      // Even empty wallets don't need SOL - sponsor pays gas atomically
       const needed = await checkSponsorshipNeeded(
         connection,
         emptyWallet.publicKey
       );
-      expect(needed).toBe(MIN_SOL_FOR_SDK_CHECK);
+      expect(needed).toBe(0);
     });
   });
 
@@ -46,8 +44,8 @@ describe("Atomic Sponsorship", () => {
       // This test documents the security properties of atomic sponsorship
 
       const securityProperties = {
-        // Pre-fund risk: Small, acceptable amount
-        maxPrefundRisk: `${MIN_SOL_FOR_SDK_CHECK} SOL`,
+        // Pre-fund risk: ZERO - no pre-funding needed
+        maxPrefundRisk: "0 SOL",
 
         // Transaction fee: Fully atomic
         transactionFeeProtection:
@@ -59,12 +57,13 @@ describe("Atomic Sponsorship", () => {
 
         // Griefing mitigation
         griefingMitigation:
-          "Max loss per griefing attempt is limited to pre-fund amount",
+          "No griefing possible - sponsor only pays if transaction succeeds atomically",
       };
 
       console.log("Security Properties:", securityProperties);
 
-      expect(securityProperties.maxPrefundRisk).toBe("0.002 SOL");
+      // No pre-funding means no risk
+      expect(securityProperties.maxPrefundRisk).toBe("0 SOL");
     });
   });
 });
