@@ -1,36 +1,179 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PrivacyCash
 
-## Getting Started
+This repository contains helper flows, sponsor logic, and test scripts used to support **PrivacyCash** deposits and withdrawals on Solana with **automatic gas sponsorship**.
 
-First, run the development server:
+The goal is simple:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Users should **not need SOL** to interact
+- Gas is **profiled and pre‑funded** via a sponsor wallet
+- No funds are lost, even if a transaction fails midway
+
+---
+
+## 📁 Project Structure
+
+```
+.
+├── app/                     # App entry (if any)
+├── cache/                   # Local cache (gitignored)
+├── lib/
+│   ├── flows/               # High‑level gas & flow helpers
+│   │   ├── ensureGasForClaim.ts
+│   │   ├── ensureGasForDeposit.ts
+│   │   └── ensureGasForWithdraw.ts
+│   │
+│   ├── gas/                 # Gas estimation & profiling
+│   │   ├── constants.ts
+│   │   ├── gasEstimator.ts
+│   │   └── gasProfiles.ts
+│   │
+│   ├── privacycash/         # Thin wrappers around SDK
+│   │   ├── client.ts
+│   │   ├── deposit.ts
+│   │   ├── withdraw.ts
+│   │   ├── tokens.ts
+│   │   └── index.ts
+│   │
+│   ├── sponsor/             # Sponsor wallet logic
+│   │   ├── sponsorPolicy.ts
+│   │   ├── sponsorSol.ts
+│   │   └── sponsorWallet.ts
+│   │
+│   └── burner-wallet.ts     # Burner wallet utilities
+│
+├── tests/
+│   ├── usdc-mainnet.test.ts # Mainnet USDC deposit/withdraw test
+│   └── ...
+│
+├── .env.local               # Environment variables (not committed)
+├── package.json
+├── bun.lockb
+└── README.md
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🔑 Environment Setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Create a `.env.local` file at the root of the repo:
 
-## Learn More
+```
+# RPC
+HELIUS_RPC=https://mainnet.helius-rpc-url
 
-To learn more about Next.js, take a look at the following resources:
+# Sender wallet (user / burner owner)
+TEST_PRIVATE_KEY=BASE58_PRIVATE_KEY
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# Sponsor wallet (pays gas)
+SPONSOR_PRIVATE_KEY=BASE58_PRIVATE_KEY
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# Safety switch for mainnet tests
+CONFIRM_MAINNET_TEST=true
+```
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 🧠 How Gas Sponsorship Works
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This repo does **not** try to simulate exact transaction gas.
+
+Instead it uses **profiling‑based sponsorship**:
+
+1. Transactions are profiled once on mainnet
+2. A safe SOL buffer is defined per flow
+3. Sponsor pre‑funds the burner / sender wallet
+4. Transaction executes
+5. Any leftover SOL stays in the burner wallet
+
+This avoids:
+
+- RPC‑dependent simulations
+- CU variance issues
+- Version drift bugs
+
+---
+
+## 🔁 Flow Helpers
+
+### `ensureGasForDeposit`
+
+Ensures the sender has enough SOL to:
+
+- Create ATA (if needed)
+- Pay compute + signatures
+- Perform USDC deposit
+
+### `ensureGasForWithdraw`
+
+Ensures the sender has enough SOL to:
+
+- Execute PrivacyCash withdrawal
+- Pay protocol + transfer fees
+
+### `ensureGasForClaim`
+
+Used when a recipient claims funds from a link / UTXO
+
+All helpers:
+
+- Check current SOL balance
+- Top up only if required
+- Use sponsor wallet as payer
+
+---
+
+## 🧪 Running Tests (Bun)
+
+Install dependencies:
+
+```
+bun install
+```
+
+Run USDC mainnet test:
+
+```
+CONFIRM_MAINNET_TEST=true bun run test:usdc
+```
+
+This test:
+
+1. Deposits USDC into PrivacyCash
+2. Waits for indexer sync
+3. Verifies private balance
+4. Withdraws back to sender
+
+---
+
+## 💸 Fee Model (Important)
+
+```
+0.006 SOL × recipients + 0.35% of withdrawal amount
+```
+
+- `0.006 SOL` → gas & infra fee (paid in SOL)
+- `0.35%` → protocol fee (deducted from USDC)
+
+SOL and USDC fees are **independent**.
+
+---
+
+## ✅ Status
+
+- ✔ Gas sponsorship implemented
+- ✔ Deposit & withdraw flows working
+- ✔ Mainnet tested with USDC
+- ✔ No pending / lost funds
+
+---
+
+## 🧩 Notes
+
+- Burner wallets may retain small SOL dust
+- Sponsor wallet can be rotated anytime
+- Indexer delay is expected (30–60s)
+
+---
+
+If something looks unused but is green — **it is intentional**.
+Most files are modular to support future flows.
