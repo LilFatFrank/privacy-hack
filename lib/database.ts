@@ -1,45 +1,77 @@
+import { createClient } from "@supabase/supabase-js";
+import { createHmac } from "crypto";
 import { EncryptedPayload } from "./crypto";
 
-export interface Payment {
+// Types
+export type ActivityType = "send" | "request" | "claim";
+export type ActivityStatus = "open" | "settled" | "cancelled";
+
+export interface Activity {
   id: string;
-
-  burnerPublicKey: string;
-
-  encryptedKeyForRecipient: EncryptedPayload;
-  encryptedKeyForSender: EncryptedPayload;
-
-  sender: string;
-  recipient: string;
-
+  type: ActivityType;
+  sender_hash: string;
+  receiver_hash: string | null;
   amount: number;
-  token: "SOL" | "USDC" | "USDT";
+  token_address: string | null; // null for native SOL
+  status: ActivityStatus;
+  message: string | null;
+  tx_hash: string | null;
+  created_at: number;
+  updated_at: number;
 
-  status: "pending" | "claimed" | "reclaimed";
+  // Claim-specific fields (null for send/request)
+  burner_address: string | null;
+  encrypted_for_receiver: EncryptedPayload | null;
+  encrypted_for_sender: EncryptedPayload | null;
+  deposit_tx_hash: string | null;
+  claim_tx_hash: string | null;
 
-  createdAt: number;
-  claimedAt?: number;
-
-  depositTxSignature?: string;
+  // Request-specific field: unhashed address needed to send funds
+  receiver_address: string | null;
 }
 
-import { createClient } from "@supabase/supabase-js";
-
+// Supabase client
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function storePayment(payment: Payment): Promise<void> {
-  const { error } = await supabase.from("payments").insert([payment]);
-
-  if (error) {
-    throw new Error(`Failed to store payment: ${error.message}`);
+// Hash address with secret
+export function hashAddress(address: string): string {
+  const secret = process.env.HASH_SECRET;
+  if (!secret) {
+    throw new Error("HASH_SECRET not configured");
   }
+  return createHmac("sha256", secret).update(address).digest("hex");
 }
 
-export async function getPayment(id: string): Promise<Payment | null> {
+// Create activity
+export async function createActivity(
+  activity: Omit<Activity, "id" | "created_at" | "updated_at">
+): Promise<Activity> {
+  const now = Date.now();
+  const id = crypto.randomUUID();
+
+  const record: Activity = {
+    ...activity,
+    id,
+    created_at: now,
+    updated_at: now,
+  };
+
+  const { error } = await supabase.from("activity").insert([record]);
+
+  if (error) {
+    throw new Error(`Failed to create activity: ${error.message}`);
+  }
+
+  return record;
+}
+
+// Get activity by ID
+export async function getActivity(id: string): Promise<Activity | null> {
   const { data, error } = await supabase
-    .from("payments")
+    .from("activity")
     .select("*")
     .eq("id", id)
     .single();
@@ -48,53 +80,92 @@ export async function getPayment(id: string): Promise<Payment | null> {
     if (error.code === "PGRST116") {
       return null;
     }
-    throw new Error(`Failed to get payment: ${error.message}`);
+    throw new Error(`Failed to get activity: ${error.message}`);
   }
 
   return data;
 }
 
-export async function updatePaymentStatus(
+// Update activity status
+export async function updateActivityStatus(
   id: string,
-  status: "claimed" | "reclaimed",
-  claimedAt: number
+  status: ActivityStatus,
+  updates?: Partial<Pick<Activity, "tx_hash" | "claim_tx_hash" | "receiver_hash">>
 ): Promise<void> {
   const { error } = await supabase
-    .from("payments")
-    .update({ status, claimedAt })
+    .from("activity")
+    .update({
+      status,
+      updated_at: Date.now(),
+      ...updates,
+    })
     .eq("id", id);
 
   if (error) {
-    throw new Error(`Failed to update payment: ${error.message}`);
+    throw new Error(`Failed to update activity: ${error.message}`);
   }
 }
 
-export async function getPaymentsByRecipient(
-  recipient: string
-): Promise<Payment[]> {
+// Get all activities for a user
+export async function getActivitiesForUser(
+  userAddress: string
+): Promise<Activity[]> {
+  const userHash = hashAddress(userAddress);
+
   const { data, error } = await supabase
-    .from("payments")
+    .from("activity")
     .select("*")
-    .eq("recipient", recipient)
-    .order("createdAt", { ascending: false });
+    .or(`sender_hash.eq.${userHash},receiver_hash.eq.${userHash}`)
+    .order("created_at", { ascending: false });
 
   if (error) {
-    throw new Error(`Failed to get payments: ${error.message}`);
+    throw new Error(`Failed to get activities: ${error.message}`);
   }
 
   return data || [];
 }
 
-export async function getPaymentsBySender(sender: string): Promise<Payment[]> {
-  const { data, error } = await supabase
-    .from("payments")
-    .select("*")
-    .eq("sender", sender)
-    .order("createdAt", { ascending: false });
+// Get user stats (computed from activity)
+export async function getUserStats(userAddress: string): Promise<{
+  total_sent: number;
+  total_received: number;
+  total_claimed: number;
+}> {
+  const userHash = hashAddress(userAddress);
 
-  if (error) {
-    throw new Error(`Failed to get payments: ${error.message}`);
+  // Get all settled activities where user is sender
+  const { data: sentData, error: sentError } = await supabase
+    .from("activity")
+    .select("amount, type")
+    .eq("sender_hash", userHash)
+    .eq("status", "settled");
+
+  if (sentError) {
+    throw new Error(`Failed to get sent stats: ${sentError.message}`);
   }
 
-  return data || [];
+  // Get all settled activities where user is receiver
+  const { data: receivedData, error: receivedError } = await supabase
+    .from("activity")
+    .select("amount, type")
+    .eq("receiver_hash", userHash)
+    .eq("status", "settled");
+
+  if (receivedError) {
+    throw new Error(`Failed to get received stats: ${receivedError.message}`);
+  }
+
+  const total_sent = (sentData || [])
+    .filter((a) => a.type === "send")
+    .reduce((sum, a) => sum + a.amount, 0);
+
+  const total_received = (receivedData || [])
+    .filter((a) => a.type === "send" || a.type === "request")
+    .reduce((sum, a) => sum + a.amount, 0);
+
+  const total_claimed = (receivedData || [])
+    .filter((a) => a.type === "claim")
+    .reduce((sum, a) => sum + a.amount, 0);
+
+  return { total_sent, total_received, total_claimed };
 }
