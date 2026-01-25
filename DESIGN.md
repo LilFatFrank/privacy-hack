@@ -89,7 +89,119 @@ activity {
 - **Hashed addresses:** sender/receiver addresses stored as hashes for privacy
 - **Burner address unhashed:** needed for balance checks
 - **Consistent status:** `open | settled | cancelled` across all operations
-- **Consistent naming:** `senderHash`, `receiverHash` everywhere
+- **Consistent naming:** `sender_hash`, `receiver_hash` (snake_case)
 - **No expiration:** links stay open indefinitely
 - **Message optional:** across all operations
 - **Type values:** `send | request | claim`
+- **Receiver address for requests:** stored unhashed since requester reveals their address
+
+## API Endpoints
+
+### Direct Send
+```
+POST /api/send
+{
+  senderPrivateKey: string,
+  receiverAddress: string,
+  amount: number,
+  token: "USDC" | "SOL",
+  message?: string
+}
+→ { activityId, fundTx, depositTx, withdrawTx, sweepTx, amountSent, feesPaid }
+```
+
+### Claim Links
+
+**Create claim link:**
+```
+POST /api/claim/create
+{
+  senderPrivateKey: string,
+  amount: number,
+  token: "USDC" | "SOL",
+  message?: string
+}
+→ { activityId, claimLink, passphrase, depositTx }
+```
+**Note:** Send passphrase via separate channel (SMS/email)!
+
+**Redeem claim link:**
+```
+POST /api/claim/redeem
+{
+  activityId: string,
+  passphrase: string,
+  receiverAddress: string
+}
+→ { withdrawTx }
+```
+
+**Reclaim (sender takes back):**
+```
+POST /api/claim/reclaim
+{
+  activityId: string,
+  senderPrivateKey: string
+}
+→ { withdrawTx }
+```
+
+### Payment Requests
+
+**Create request:**
+```
+POST /api/request/create
+{
+  requesterAddress: string,
+  payerAddress?: string,  // Optional - restrict to specific payer
+  amount: number,
+  token: "USDC" | "SOL",
+  message?: string
+}
+→ { activityId, requestLink }
+```
+
+**Fulfill request:**
+```
+POST /api/request/fulfill
+{
+  activityId: string,
+  payerPrivateKey: string
+}
+→ { fundTx, depositTx, withdrawTx, sweepTx, amountReceived, feesPaid }
+```
+
+**Cancel request:**
+```
+POST /api/request/cancel
+{
+  activityId: string,
+  requesterAddress: string
+}
+→ { success: true }
+```
+
+### Activity
+
+**Get activity by ID:**
+```
+GET /api/activity/[id]
+→ Activity (without encrypted fields)
+```
+
+**Get user activities:**
+```
+GET /api/activity/user?address=...
+→ { activities: Activity[], stats: { total_sent, total_received, total_claimed } }
+```
+
+## Sponsored Transaction Flow
+
+The sponsor handles all gas fees:
+
+1. **Pre-fund:** Sponsor transfers rent (for nullifier PDAs) + SDK minimum to sender
+2. **Deposit:** Sender deposits to PrivacyCash
+3. **Withdraw:** Relayer withdraws to receiver (relayer pays gas, takes fee)
+4. **Sweep:** Sponsor recovers all remaining SOL from sender
+
+Result: Sender ends with 0 SOL, sponsor spent ~0.00001 SOL.

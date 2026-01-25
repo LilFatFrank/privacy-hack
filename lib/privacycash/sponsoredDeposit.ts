@@ -218,7 +218,8 @@ export type SponsoredDepositSPLParams = {
   lightWasm: hasher.LightWasm;
   referrer?: string;
   signer?: PublicKey;
-  feePayer: PublicKey; // NEW: Who pays the transaction fee
+  feePayer?: PublicKey; // Optional: Who pays the transaction fee (defaults to signer)
+  additionalInstructions?: TransactionInstruction[]; // NEW: Extra instructions (e.g., sweep)
   transactionSigner: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
 };
 
@@ -244,6 +245,7 @@ export async function sponsoredDepositSPL({
   mintAddress,
   signer,
   feePayer,
+  additionalInstructions = [],
 }: SponsoredDepositSPLParams) {
   if (typeof mintAddress === "string") {
     mintAddress = new PublicKey(mintAddress);
@@ -266,7 +268,7 @@ export async function sponsoredDepositSPL({
     signer = publicKey;
   }
 
-  const recipient = new PublicKey("AWexibGxNFKTa1b5R5MN4PJr9HWnWRwf8EW9g8cLx3dM");
+  const recipient = FEE_RECIPIENT;
   const recipient_ata = getAssociatedTokenAddressSync(token.pubkey, recipient, true);
   const feeRecipientTokenAccount = getAssociatedTokenAddressSync(
     token.pubkey,
@@ -541,17 +543,18 @@ export async function sponsoredDepositSPL({
     data: serializedProof,
   });
 
+  // Use smaller compute budget to save bytes (500k instead of 1M)
   const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({
-    units: 1_000_000,
+    units: 500_000,
   });
 
   const recentBlockhash = await connection.getLatestBlockhash();
 
-  // KEY CHANGE: Use feePayer instead of signer for payerKey
+  // Build transaction with optional feePayer and additional instructions (e.g., sweep)
   const messageV0 = new TransactionMessage({
-    payerKey: feePayer, // Sponsor pays the fee
+    payerKey: feePayer || signer, // Use feePayer if provided, else signer pays
     recentBlockhash: recentBlockhash.blockhash,
-    instructions: [modifyComputeUnits, depositInstruction],
+    instructions: [modifyComputeUnits, depositInstruction, ...additionalInstructions],
   }).compileToV0Message([lookupTableAccount.value]);
 
   let versionedTransaction = new VersionedTransaction(messageV0);
@@ -795,7 +798,7 @@ export async function sponsoredDepositSOL({
   const encryptedOutput2 = encryptionService.encryptUtxo(outputs[1]);
 
   const extData = {
-    recipient: new PublicKey("AWexibGxNFKTa1b5R5MN4PJr9HWnWRwf8EW9g8cLx3dM"),
+    recipient: FEE_RECIPIENT,
     extAmount: new BN(extAmount),
     encryptedOutput1,
     encryptedOutput2,
@@ -863,7 +866,7 @@ export async function sponsoredDepositSOL({
       { pubkey: treeTokenAccount, isSigner: false, isWritable: true },
       { pubkey: globalConfigAccount, isSigner: false, isWritable: false },
       {
-        pubkey: new PublicKey("AWexibGxNFKTa1b5R5MN4PJr9HWnWRwf8EW9g8cLx3dM"),
+        pubkey: FEE_RECIPIENT,
         isSigner: false,
         isWritable: true,
       },

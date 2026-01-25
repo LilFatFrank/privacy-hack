@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Keypair } from "@solana/web3.js";
 import bs58 from "bs58";
 
-import { createPayment } from "@/lib/payment-flow";
+import { directSend } from "@/lib/operations/send";
 import { TokenType } from "@/lib/privacycash/tokens";
 
 export async function POST(request: NextRequest) {
@@ -11,18 +11,20 @@ export async function POST(request: NextRequest) {
 
     const {
       senderPrivateKey,
-      recipientAddress,
+      receiverAddress,
       amount,
       token,
+      message,
     }: {
       senderPrivateKey: string;
-      recipientAddress: string;
+      receiverAddress: string;
       amount: number;
       token: TokenType;
+      message?: string;
     } = body;
 
     // Validation
-    if (!senderPrivateKey || !recipientAddress || !amount || !token) {
+    if (!senderPrivateKey || !receiverAddress || !amount || !token) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
@@ -39,20 +41,21 @@ export async function POST(request: NextRequest) {
     // Keypair
     const senderKeypair = Keypair.fromSecretKey(bs58.decode(senderPrivateKey));
 
-    // Create Payment
-    const result = await createPayment(
+    // Execute direct send
+    const result = await directSend({
       senderKeypair,
-      recipientAddress,
+      receiverAddress,
       amount,
-      token
-    );
+      token,
+      message,
+    });
 
     return NextResponse.json(result);
   } catch (error: any) {
-    console.error("Create payment error:", error);
+    console.error("Direct send error:", error);
 
     return NextResponse.json(
-      { error: error.message ?? "Failed to create payment" },
+      { error: error.message ?? "Failed to send" },
       { status: 500 }
     );
   }
