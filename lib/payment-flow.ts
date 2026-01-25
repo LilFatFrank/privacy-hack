@@ -1,11 +1,10 @@
 import { Keypair, PublicKey, Connection } from "@solana/web3.js";
 import { v4 as uuidv4 } from "uuid";
 
-import { createBurnerWallet, fundBurnerWallet } from "./burner-wallet";
+import { createBurnerWallet } from "./burner-wallet";
 
 import {
   createPrivacyCashClient,
-  depositToPrivacyCash,
   withdrawFromPrivacyCash,
 } from "./privacycash";
 
@@ -17,7 +16,11 @@ import {
 } from "./database";
 
 import { decryptWithPrivateKey, EncryptedPayload } from "./crypto";
-import { TokenType } from "./privacycash/tokens";
+import { TokenType, TOKEN_MINTS } from "./privacycash/tokens";
+import {
+  atomicSponsoredDeposit,
+  atomicSponsoredSolDeposit,
+} from "./sponsor/atomicSponsor";
 
 // Internal helper
 async function withdrawUsingEncryptedBurner(
@@ -46,6 +49,8 @@ async function withdrawUsingEncryptedBurner(
 }
 
 // Create Payment
+// Uses atomic sponsorship - the sender sponsors the burner's transaction fee
+// This ensures the deposit cannot fail after gas has been funded
 export async function createPayment(
   senderKeypair: Keypair,
   recipientPublicKey: string,
@@ -58,19 +63,101 @@ export async function createPayment(
   );
 
   const connection = new Connection(process.env.RPC_URL!);
-  await fundBurnerWallet(
-    connection,
-    senderKeypair,
-    burnerKeypair.publicKey,
-    0.01
-  );
 
-  const client = createPrivacyCashClient(
-    process.env.RPC_URL!,
-    burnerKeypair.secretKey
-  );
+  let depositRes: { tx: string };
 
-  const depositRes = await depositToPrivacyCash(client, amount, token);
+  if (token === "SOL") {
+    // For SOL: sender sponsors the deposit, burner deposits SOL from sender's funding
+    // First, fund the burner with SOL to deposit (this is the deposit amount, not gas)
+    const lamports = amount * 1_000_000_000;
+
+    // Transfer SOL to burner for the actual deposit
+    const { Transaction, SystemProgram } = await import("@solana/web3.js");
+    const fundTx = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: senderKeypair.publicKey,
+        toPubkey: burnerKeypair.publicKey,
+        lamports: lamports,
+      })
+    );
+    const fundSig = await connection.sendTransaction(fundTx, [senderKeypair]);
+    await connection.confirmTransaction(fundSig, "confirmed");
+
+    // Now do atomic sponsored deposit (sender pays tx fee, burner deposits)
+    depositRes = await atomicSponsoredSolDeposit({
+      connection,
+      userKeypair: burnerKeypair,
+      sponsorKeypair: senderKeypair,
+      lamports,
+    });
+  } else {
+    // For SPL tokens: sender needs to transfer tokens to burner first
+    // Then sponsor the deposit transaction fee
+    const { getAssociatedTokenAddress, createTransferInstruction } =
+      await import("@solana/spl-token");
+    const { Transaction } = await import("@solana/web3.js");
+
+    const mintAddress = TOKEN_MINTS[token];
+
+    // Get sender's and burner's token accounts
+    const senderAta = await getAssociatedTokenAddress(
+      mintAddress,
+      senderKeypair.publicKey
+    );
+    const burnerAta = await getAssociatedTokenAddress(
+      mintAddress,
+      burnerKeypair.publicKey
+    );
+
+    // Create burner's ATA if needed, then transfer tokens
+    const { createAssociatedTokenAccountInstruction, getAccount } =
+      await import("@solana/spl-token");
+
+    const transferTx = new Transaction();
+
+    // Check if burner ATA exists
+    try {
+      await getAccount(connection, burnerAta);
+    } catch {
+      // Create ATA for burner
+      transferTx.add(
+        createAssociatedTokenAccountInstruction(
+          senderKeypair.publicKey, // payer
+          burnerAta, // ata
+          burnerKeypair.publicKey, // owner
+          mintAddress // mint
+        )
+      );
+    }
+
+    // Get token decimals (USDC = 6)
+    const baseUnits = Math.floor(amount * 1_000_000);
+
+    // Add token transfer
+    transferTx.add(
+      createTransferInstruction(
+        senderAta, // from
+        burnerAta, // to
+        senderKeypair.publicKey, // owner
+        baseUnits // amount
+      )
+    );
+
+    // Send token transfer
+    const transferSig = await connection.sendTransaction(transferTx, [
+      senderKeypair,
+    ]);
+    await connection.confirmTransaction(transferSig, "confirmed");
+
+    // Now do atomic sponsored deposit
+    depositRes = await atomicSponsoredDeposit({
+      connection,
+      userKeypair: burnerKeypair,
+      sponsorKeypair: senderKeypair,
+      mintAddress,
+      baseUnits,
+    });
+  }
 
   const paymentId = uuidv4();
 
