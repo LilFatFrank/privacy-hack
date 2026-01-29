@@ -14,7 +14,6 @@ import { TOKEN_MINTS } from "../lib/privacycash/tokens";
 import {
   createActivity,
   updateActivityStatus,
-  hashAddress,
 } from "../lib/database";
 
 const RECEIVER = "3ePJcbZTNca4utt78bXXqvAZQtboU7VumKdD7jWXwy9g";
@@ -101,8 +100,8 @@ async function main() {
   console.log("\nRecording activity in DB...");
   const activity = await createActivity({
     type: "send",
-    sender_hash: hashAddress(sender.publicKey.toBase58()),
-    receiver_hash: hashAddress(RECEIVER),
+    sender_address: sender.publicKey.toBase58(),
+    receiver_address: RECEIVER,
     amount: USDC_AMOUNT,
     token_address: TOKEN_MINTS.USDC.toBase58(),
     status: "open",
@@ -113,7 +112,6 @@ async function main() {
     encrypted_for_sender: null,
     deposit_tx_hash: null,
     claim_tx_hash: null,
-    receiver_address: null,
   });
   console.log("Activity created:", activity.id);
 

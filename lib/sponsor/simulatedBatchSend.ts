@@ -35,7 +35,6 @@ import { TOKEN_MINTS, TokenType } from "../privacycash/tokens";
 import {
   createActivity,
   updateActivityStatus,
-  hashAddress,
 } from "../database";
 
 // Rent for 2 nullifier PDAs + SDK minimum
@@ -123,13 +122,18 @@ export async function simulatedBatchSend(
   console.log("\n[0/6] Creating activity record...");
   const activity = await createActivity({
     type: "send",
-    sender_hash: hashAddress(userPublicKey.toBase58()),
-    receiver_hash: hashAddress(receiverAddress),
+    sender_address: userPublicKey.toBase58(),
+    receiver_address: receiverAddress,
     amount,
     token_address: TOKEN_MINTS[token].toBase58(),
     status: "open",
     message: null,
     tx_hash: null,
+    burner_address: null,
+    encrypted_for_receiver: null,
+    encrypted_for_sender: null,
+    deposit_tx_hash: null,
+    claim_tx_hash: null,
   });
   console.log("Activity created:", activity.id);
 

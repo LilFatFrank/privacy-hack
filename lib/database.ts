@@ -1,16 +1,18 @@
 import { createClient } from "@supabase/supabase-js";
-import { createHmac } from "crypto";
-import { EncryptedPayload } from "./crypto";
+import { EncryptedPayload, PassphraseEncryptedPayload } from "./crypto";
 
 // Types
-export type ActivityType = "send" | "request" | "claim";
+export type ActivityType = "send" | "request" | "send_claim";
+
+// Encrypted data can be either asymmetric (EncryptedPayload) or symmetric (PassphraseEncryptedPayload)
+export type ClaimEncryptedData = EncryptedPayload | PassphraseEncryptedPayload;
 export type ActivityStatus = "open" | "settled" | "cancelled";
 
 export interface Activity {
   id: string;
   type: ActivityType;
-  sender_hash: string;
-  receiver_hash: string | null;
+  sender_address: string;
+  receiver_address: string | null;
   amount: number;
   token_address: string | null; // null for native SOL
   status: ActivityStatus;
@@ -19,15 +21,12 @@ export interface Activity {
   created_at: number;
   updated_at: number;
 
-  // Claim-specific fields (null for send/request)
-  burner_address: string | null;
-  encrypted_for_receiver: EncryptedPayload | null;
-  encrypted_for_sender: EncryptedPayload | null;
-  deposit_tx_hash: string | null;
-  claim_tx_hash: string | null;
-
-  // Request-specific field: unhashed address needed to send funds
-  receiver_address: string | null;
+  // send_claim-specific fields (optional, only for send_claim type)
+  burner_address?: string | null;
+  encrypted_for_receiver?: ClaimEncryptedData | null;
+  encrypted_for_sender?: ClaimEncryptedData | null;
+  deposit_tx_hash?: string | null;
+  claim_tx_hash?: string | null;
 }
 
 // Supabase client
@@ -35,15 +34,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
-
-// Hash address with secret
-export function hashAddress(address: string): string {
-  const secret = process.env.HASH_SECRET;
-  if (!secret) {
-    throw new Error("HASH_SECRET not configured");
-  }
-  return createHmac("sha256", secret).update(address).digest("hex");
-}
 
 // Create activity
 export async function createActivity(
@@ -59,7 +49,12 @@ export async function createActivity(
     updated_at: now,
   };
 
-  const { error } = await supabase.from("activity").insert([record]);
+  // Remove undefined fields to avoid Supabase schema errors
+  const cleanRecord = Object.fromEntries(
+    Object.entries(record).filter(([_, v]) => v !== undefined)
+  );
+
+  const { error } = await supabase.from("activity").insert([cleanRecord]);
 
   if (error) {
     throw new Error(`Failed to create activity: ${error.message}`);
@@ -90,7 +85,7 @@ export async function getActivity(id: string): Promise<Activity | null> {
 export async function updateActivityStatus(
   id: string,
   status: ActivityStatus,
-  updates?: Partial<Pick<Activity, "tx_hash" | "claim_tx_hash" | "receiver_hash">>
+  updates?: Partial<Pick<Activity, "tx_hash" | "claim_tx_hash" | "receiver_address" | "sender_address">>
 ): Promise<void> {
   const { error } = await supabase
     .from("activity")
@@ -110,12 +105,10 @@ export async function updateActivityStatus(
 export async function getActivitiesForUser(
   userAddress: string
 ): Promise<Activity[]> {
-  const userHash = hashAddress(userAddress);
-
   const { data, error } = await supabase
     .from("activity")
     .select("*")
-    .or(`sender_hash.eq.${userHash},receiver_hash.eq.${userHash}`)
+    .or(`sender_address.eq.${userAddress},receiver_address.eq.${userAddress}`)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -131,13 +124,11 @@ export async function getUserStats(userAddress: string): Promise<{
   total_received: number;
   total_claimed: number;
 }> {
-  const userHash = hashAddress(userAddress);
-
   // Get all settled activities where user is sender
   const { data: sentData, error: sentError } = await supabase
     .from("activity")
     .select("amount, type")
-    .eq("sender_hash", userHash)
+    .eq("sender_address", userAddress)
     .eq("status", "settled");
 
   if (sentError) {
@@ -148,7 +139,7 @@ export async function getUserStats(userAddress: string): Promise<{
   const { data: receivedData, error: receivedError } = await supabase
     .from("activity")
     .select("amount, type")
-    .eq("receiver_hash", userHash)
+    .eq("receiver_address", userAddress)
     .eq("status", "settled");
 
   if (receivedError) {
@@ -164,7 +155,7 @@ export async function getUserStats(userAddress: string): Promise<{
     .reduce((sum, a) => sum + a.amount, 0);
 
   const total_claimed = (receivedData || [])
-    .filter((a) => a.type === "claim")
+    .filter((a) => a.type === "send_claim")
     .reduce((sum, a) => sum + a.amount, 0);
 
   return { total_sent, total_received, total_claimed };

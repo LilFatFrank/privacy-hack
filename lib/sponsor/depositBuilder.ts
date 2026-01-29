@@ -63,7 +63,9 @@ import { TOKEN_MINTS, TokenType } from "../privacycash/tokens";
 
 export interface BuildDepositParams {
   connection: Connection;
-  userKeypair: Keypair;
+  userKeypair?: Keypair;
+  userPublicKey?: PublicKey;
+  sessionSignature?: Uint8Array; // 64-byte signature for deriving keys
   baseUnits: number;
   token: TokenType;
   storage: Storage;
@@ -73,6 +75,7 @@ export interface BuildDepositResult {
   transaction: VersionedTransaction;
   mintAddress: PublicKey;
   encryptedOutput: Uint8Array;
+  lastValidBlockHeight: number;
 }
 
 /**
@@ -81,10 +84,18 @@ export interface BuildDepositResult {
 export async function buildDepositSPLTransaction(
   params: BuildDepositParams
 ): Promise<BuildDepositResult> {
-  const { connection, userKeypair, baseUnits, token, storage } = params;
+  const { connection, userKeypair, userPublicKey: providedPublicKey, sessionSignature, baseUnits, token, storage } = params;
+
+  // Support both keypair mode (legacy) and session signature mode (new)
+  if (!userKeypair && !sessionSignature) {
+    throw new Error("Either userKeypair or sessionSignature must be provided");
+  }
+  if (!userKeypair && !providedPublicKey) {
+    throw new Error("userPublicKey is required when using sessionSignature");
+  }
 
   const mintAddress = TOKEN_MINTS[token];
-  const userPublicKey = userKeypair.publicKey;
+  const userPublicKey = userKeypair?.publicKey ?? providedPublicKey!;
 
   const tokenInfo = tokens.find((t) => t.pubkey.toString() === mintAddress.toString());
   if (!tokenInfo) {
@@ -94,7 +105,13 @@ export async function buildDepositSPLTransaction(
   // Initialize SDK components
   const lightWasm = await WasmFactory.getInstance();
   const encryptionService = new EncryptionService();
-  encryptionService.deriveEncryptionKeyFromWallet(userKeypair);
+
+  // Derive encryption keys from either keypair or session signature
+  if (userKeypair) {
+    encryptionService.deriveEncryptionKeyFromWallet(userKeypair);
+  } else {
+    encryptionService.deriveEncryptionKeyFromSignature(sessionSignature!);
+  }
 
   // Token accounts
   const recipient = FEE_RECIPIENT;
@@ -335,8 +352,8 @@ export async function buildDepositSPLTransaction(
     units: 500_000,
   });
 
-  // Build transaction
-  const { blockhash } = await connection.getLatestBlockhash();
+  // Build transaction - use "confirmed" for fresher blockhash
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
 
   const messageV0 = new TransactionMessage({
     payerKey: userPublicKey,
@@ -350,5 +367,6 @@ export async function buildDepositSPLTransaction(
     transaction,
     mintAddress: tokenInfo.pubkey,
     encryptedOutput: encryptedOutput1,
+    lastValidBlockHeight,
   };
 }

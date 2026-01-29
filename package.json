@@ -10,7 +10,10 @@
     "test:dry": "bun tests/dry-run.test.ts",
     "test:sol": "bun tests/sol-mainnet.test.ts",
     "test:recover": "bun tests/sol-recover.test.ts",
-    "test:usdc": "bun tests/usdc-mainnet.test.ts"
+    "test:usdc": "bun tests/usdc-mainnet.test.ts",
+    "test:send": "bun test tests/prepare-submit-send.test.ts",
+    "test:fulfill": "bun test tests/prepare-submit-fulfill.test.ts",
+    "test:claim": "bun test tests/prepare-submit-claim.test.ts"
   },
   "dependencies": {
     "@solana/wallet-adapter-base": "^0.9.27",
