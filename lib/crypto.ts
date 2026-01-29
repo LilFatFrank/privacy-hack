@@ -1,7 +1,7 @@
 import nacl from "tweetnacl";
 import { PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
-import { createHash, randomBytes } from "crypto";
+import { createHash, randomBytes, randomInt, pbkdf2Sync } from "crypto";
 
 export interface EncryptedPayload {
   ciphertext: string;
@@ -16,7 +16,7 @@ export interface PassphraseEncryptedPayload {
   salt: string;
 }
 
-// Word lists for passphrase generation (256 words each for ~42 bits with 4 words + 3 digits)
+// Word lists for passphrase generation (256 words each for ~32 bits per word pair)
 const ADJECTIVES = [
   "amber", "ancient", "arctic", "autumn", "azure", "bitter", "blazing", "bold",
   "brave", "bright", "bronze", "calm", "carbon", "cedar", "chrome", "citrus",
@@ -39,17 +39,17 @@ const ADJECTIVES = [
   "long", "lost", "loud", "lovely", "low", "loyal", "lucky", "lunar",
   "magic", "major", "marble", "marine", "master", "mellow", "mental", "mesa",
   "metal", "micro", "mild", "mint", "misty", "modern", "molten", "moon",
-  "mossy", "mountain", "moving", "muddy", "muted", "mystic", "narrow", "native",
-  "navy", "near", "neat", "neon", "neural", "new", "next", "night",
-  "nimble", "noble", "north", "nova", "oak", "ocean", "odd", "olive",
-  "omega", "onyx", "open", "orange", "orbit", "orchid", "organic", "outer",
-  "pale", "paper", "past", "patient", "peace", "pearl", "phantom", "piano",
-  "pilot", "pink", "pixel", "plain", "plasma", "platinum", "plum", "polar",
-  "polite", "pond", "power", "primal", "prime", "pristine", "proud", "pure",
-  "purple", "quartz", "queen", "quest", "quick", "quiet", "radiant", "rain",
-  "random", "rapid", "rare", "raven", "raw", "ready", "real", "rebel",
-  "red", "regal", "remote", "retro", "rich", "rigid", "river", "robust",
-  "rock", "roman", "rose", "rough", "round", "royal", "ruby", "rugged",
+  "mossy", "moving", "muddy", "muted", "mystic", "narrow", "native", "navy",
+  "near", "neat", "neon", "neural", "new", "next", "night", "nimble",
+  "noble", "north", "nova", "oak", "ocean", "odd", "olive", "omega",
+  "onyx", "open", "orange", "orbit", "orchid", "organic", "outer", "pale",
+  "paper", "past", "patient", "peace", "pearl", "phantom", "piano", "pilot",
+  "pink", "pixel", "plain", "plasma", "platinum", "plum", "polar", "polite",
+  "pond", "power", "primal", "prime", "pristine", "proud", "pure", "purple",
+  "quartz", "queen", "quest", "quick", "quiet", "radiant", "rain", "random",
+  "rapid", "rare", "raven", "raw", "ready", "real", "rebel", "red",
+  "regal", "remote", "retro", "rich", "rigid", "river", "robust", "rock",
+  "roman", "rose", "rough", "round", "royal", "ruby", "rugged", "rustic",
 ];
 
 const NOUNS = [
@@ -84,7 +84,7 @@ const NOUNS = [
   "spark", "sparrow", "spectrum", "sphinx", "spider", "spirit", "spring", "spruce",
   "spur", "star", "steel", "stone", "storm", "stream", "summit", "sun",
   "swallow", "swift", "temple", "terra", "thistle", "thorn", "thunder", "tide",
-  "tiger", "timber", "titan", "torch", "trail", "tree", "trident", "trinity",
+  "tiger", "timber", "titan", "torch", "trail", "tree", "trident", "valley",
 ];
 
 /**
@@ -92,24 +92,30 @@ const NOUNS = [
  *
  * Entropy: 256 × 256 × 256 × 256 × 1000 = 4.3 trillion combinations (~42 bits)
  * Format: adjective-noun-adjective-noun-number
+ * Uses cryptographically secure randomness (crypto.randomInt)
  */
 export function generatePassphrase(): string {
-  const adj1 = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
-  const noun1 = NOUNS[Math.floor(Math.random() * NOUNS.length)];
-  const adj2 = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
-  const noun2 = NOUNS[Math.floor(Math.random() * NOUNS.length)];
-  const num = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
+  const adj1 = ADJECTIVES[randomInt(ADJECTIVES.length)];
+  const noun1 = NOUNS[randomInt(NOUNS.length)];
+  const adj2 = ADJECTIVES[randomInt(ADJECTIVES.length)];
+  const noun2 = NOUNS[randomInt(NOUNS.length)];
+  const num = randomInt(1000).toString().padStart(3, "0");
   return `${adj1}-${noun1}-${adj2}-${noun2}-${num}`;
 }
 
 /**
- * Derive encryption key from passphrase + salt using SHA-256
+ * Derive encryption key from passphrase + salt using PBKDF2
+ * Uses 100,000 iterations for brute-force resistance
  */
 function deriveKey(passphrase: string, salt: Uint8Array): Uint8Array {
-  const hash = createHash("sha256");
-  hash.update(passphrase);
-  hash.update(salt);
-  return new Uint8Array(hash.digest());
+  const key = pbkdf2Sync(
+    passphrase,
+    salt,
+    100000, // iterations - high enough for security, fast enough for UX
+    32, // key length (256 bits for nacl.secretbox)
+    "sha256"
+  );
+  return new Uint8Array(key);
 }
 
 /**
@@ -205,4 +211,53 @@ export function serializeKeypair(secretKey: Uint8Array): string {
 
 export function deserializeKeypair(encoded: string): Uint8Array {
   return bs58.decode(encoded);
+}
+
+/**
+ * Derive encryption key from session signature using SHA-256
+ * Used for sender reclaim capability on claim links
+ */
+function deriveKeyFromSignature(sessionSignature: Uint8Array): Uint8Array {
+  const hash = createHash("sha256");
+  hash.update(sessionSignature);
+  return new Uint8Array(hash.digest());
+}
+
+/**
+ * Encrypt data with session signature (for sender reclaim on claim links)
+ */
+export function encryptWithSessionSignature(
+  data: Uint8Array,
+  sessionSignature: Uint8Array
+): PassphraseEncryptedPayload {
+  const key = deriveKeyFromSignature(sessionSignature);
+  const nonce = randomBytes(nacl.secretbox.nonceLength);
+
+  const ciphertext = nacl.secretbox(data, nonce, key);
+
+  return {
+    ciphertext: bs58.encode(ciphertext),
+    nonce: bs58.encode(nonce),
+    salt: "", // No salt needed, signature is already unique
+  };
+}
+
+/**
+ * Decrypt data with session signature (for sender reclaim on claim links)
+ */
+export function decryptWithSessionSignature(
+  payload: PassphraseEncryptedPayload,
+  sessionSignature: Uint8Array
+): Uint8Array {
+  const key = deriveKeyFromSignature(sessionSignature);
+  const nonce = bs58.decode(payload.nonce);
+  const ciphertext = bs58.decode(payload.ciphertext);
+
+  const decrypted = nacl.secretbox.open(ciphertext, nonce, key);
+
+  if (!decrypted) {
+    throw new Error("Decryption failed - invalid session signature");
+  }
+
+  return decrypted;
 }

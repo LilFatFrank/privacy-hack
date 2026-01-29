@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
+import nacl from "tweetnacl";
 
 import { prepareSend, SESSION_MESSAGE } from "@/lib/sponsor/prepareAndSubmitSend";
 import { TokenType } from "@/lib/privacycash/tokens";
@@ -57,6 +58,21 @@ export async function POST(request: NextRequest) {
 
     // Parse inputs
     const senderPubKey = new PublicKey(senderPublicKey);
+
+    // Verify session signature proves ownership of senderPublicKey
+    const messageBytes = Buffer.from(SESSION_MESSAGE);
+    const isValid = nacl.sign.detached.verify(
+      messageBytes,
+      sessionSigBytes,
+      senderPubKey.toBytes()
+    );
+
+    if (!isValid) {
+      return NextResponse.json(
+        { error: "Invalid session signature for sender address" },
+        { status: 401 }
+      );
+    }
 
     // Get sponsor keypair
     const sponsorKey = process.env.SPONSOR_PRIVATE_KEY;

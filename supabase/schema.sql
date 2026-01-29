@@ -1,7 +1,7 @@
--- Activity table for all payment operations (send, request, claim)
+-- Activity table for all payment operations (send, request, send_claim)
 CREATE TABLE activity (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  type TEXT NOT NULL CHECK (type IN ('send', 'request', 'claim')),
+  type TEXT NOT NULL CHECK (type IN ('send', 'request', 'send_claim')),
   sender_address TEXT NOT NULL,
   receiver_address TEXT,
   amount NUMERIC NOT NULL,
@@ -12,7 +12,7 @@ CREATE TABLE activity (
   created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
   updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
 
-  -- Claim-specific fields (null for send/request)
+  -- send_claim-specific fields (null for send/request)
   burner_address TEXT,
   encrypted_for_receiver JSONB,
   encrypted_for_sender JSONB,

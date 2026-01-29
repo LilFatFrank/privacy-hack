@@ -1,8 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
-import { EncryptedPayload } from "./crypto";
+import { EncryptedPayload, PassphraseEncryptedPayload } from "./crypto";
 
 // Types
-export type ActivityType = "send" | "request" | "claim";
+export type ActivityType = "send" | "request" | "send_claim";
+
+// Encrypted data can be either asymmetric (EncryptedPayload) or symmetric (PassphraseEncryptedPayload)
+export type ClaimEncryptedData = EncryptedPayload | PassphraseEncryptedPayload;
 export type ActivityStatus = "open" | "settled" | "cancelled";
 
 export interface Activity {
@@ -18,10 +21,10 @@ export interface Activity {
   created_at: number;
   updated_at: number;
 
-  // Claim-specific fields (optional, only for claim type)
+  // send_claim-specific fields (optional, only for send_claim type)
   burner_address?: string | null;
-  encrypted_for_receiver?: EncryptedPayload | null;
-  encrypted_for_sender?: EncryptedPayload | null;
+  encrypted_for_receiver?: ClaimEncryptedData | null;
+  encrypted_for_sender?: ClaimEncryptedData | null;
   deposit_tx_hash?: string | null;
   claim_tx_hash?: string | null;
 }
@@ -152,7 +155,7 @@ export async function getUserStats(userAddress: string): Promise<{
     .reduce((sum, a) => sum + a.amount, 0);
 
   const total_claimed = (receivedData || [])
-    .filter((a) => a.type === "claim")
+    .filter((a) => a.type === "send_claim")
     .reduce((sum, a) => sum + a.amount, 0);
 
   return { total_sent, total_received, total_claimed };

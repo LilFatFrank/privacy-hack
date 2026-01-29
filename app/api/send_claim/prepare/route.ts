@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Connection, PublicKey } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import bs58 from "bs58";
 import nacl from "tweetnacl";
 
-import { submitSend, SESSION_MESSAGE } from "@/lib/sponsor/prepareAndSubmitSend";
+import { prepareClaim } from "@/lib/sponsor/prepareAndSubmitClaim";
+import { SESSION_MESSAGE } from "@/lib/sponsor/prepareAndSubmitSend";
 import { TokenType } from "@/lib/privacycash/tokens";
 
 export async function POST(request: NextRequest) {
@@ -27,29 +29,28 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     const {
-      signedDepositTx,
-      signedSweepTx,
-      activityId,
       senderPublicKey,
-      receiverAddress,
       amount,
       token,
-      lastValidBlockHeight,
+      message,
     }: {
-      signedDepositTx: string;
-      signedSweepTx: string;
-      activityId: string;
       senderPublicKey: string;
-      receiverAddress: string;
       amount: number;
       token: TokenType;
-      lastValidBlockHeight?: number;
+      message?: string;
     } = body;
 
     // Validation
-    if (!signedDepositTx || !signedSweepTx || !activityId || !senderPublicKey || !receiverAddress || !amount || !token) {
+    if (!senderPublicKey || !amount || !token) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { error: "Missing required fields: senderPublicKey, amount, token" },
+        { status: 400 }
+      );
+    }
+
+    if (amount <= 0) {
+      return NextResponse.json(
+        { error: "Amount must be greater than zero" },
         { status: 400 }
       );
     }
@@ -72,6 +73,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Get sponsor keypair
+    const sponsorKey = process.env.SPONSOR_PRIVATE_KEY;
+    if (!sponsorKey) {
+      return NextResponse.json(
+        { error: "SPONSOR_PRIVATE_KEY not configured" },
+        { status: 500 }
+      );
+    }
+    const sponsorKeypair = Keypair.fromSecretKey(bs58.decode(sponsorKey));
+
     // Get connection
     const rpcUrl = process.env.RPC_URL;
     if (!rpcUrl) {
@@ -82,33 +93,26 @@ export async function POST(request: NextRequest) {
     }
     const connection = new Connection(rpcUrl, "confirmed");
 
-    // Execute submit
-    const result = await submitSend({
+    // Execute prepare
+    const result = await prepareClaim({
       connection,
-      signedDepositTx,
-      signedSweepTx,
-      sessionSignature: sessionSigBytes,
-      activityId,
       senderPublicKey: senderPubKey,
-      receiverAddress,
+      sponsorKeypair,
+      sessionSignature: sessionSigBytes,
       amount,
       token,
-      lastValidBlockHeight,
+      message,
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json({
+      ...result,
+      sessionMessage: SESSION_MESSAGE,
+    });
   } catch (error: any) {
-    console.error("Submit send error:", error);
-
-    if (error.message === "Transaction expired. Please prepare again.") {
-      return NextResponse.json(
-        { error: "Transaction expired. Please prepare again." },
-        { status: 408 } // Request Timeout
-      );
-    }
+    console.error("Prepare claim link error:", error);
 
     return NextResponse.json(
-      { error: error.message ?? "Failed to submit send" },
+      { error: error.message ?? "Failed to prepare claim link" },
       { status: 500 }
     );
   }

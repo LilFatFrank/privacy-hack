@@ -102,7 +102,7 @@ export async function createClaimLink(
 
   // Create activity record
   const activity = await createActivity({
-    type: "claim",
+    type: "send_claim",
     sender_address: senderKeypair.publicKey.toBase58(),
     receiver_address: null, // Unknown until claimed
     amount,
@@ -246,7 +246,7 @@ export async function claimPayment(
     throw new Error("Claim link not found");
   }
 
-  if (activity.type !== "claim") {
+  if (activity.type !== "send_claim") {
     throw new Error("Not a claim link");
   }
 
@@ -317,7 +317,7 @@ export async function reclaimPayment(
     throw new Error("Claim link not found");
   }
 
-  if (activity.type !== "claim") {
+  if (activity.type !== "send_claim") {
     throw new Error("Not a claim link");
   }
 

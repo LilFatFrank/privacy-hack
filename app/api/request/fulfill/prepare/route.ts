@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
+import nacl from "tweetnacl";
 
 import { prepareFulfill } from "@/lib/sponsor/prepareAndSubmitFulfill";
+import { SESSION_MESSAGE } from "@/lib/sponsor/prepareAndSubmitSend";
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,6 +45,21 @@ export async function POST(request: NextRequest) {
 
     // Parse inputs
     const payerPubKey = new PublicKey(payerPublicKey);
+
+    // Verify session signature proves ownership of payerPublicKey
+    const messageBytes = Buffer.from(SESSION_MESSAGE);
+    const isValid = nacl.sign.detached.verify(
+      messageBytes,
+      sessionSigBytes,
+      payerPubKey.toBytes()
+    );
+
+    if (!isValid) {
+      return NextResponse.json(
+        { error: "Invalid session signature for payer address" },
+        { status: 401 }
+      );
+    }
 
     // Get sponsor keypair
     const sponsorKey = process.env.SPONSOR_PRIVATE_KEY;

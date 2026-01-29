@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
 import nacl from "tweetnacl";
 
-import { submitSend, SESSION_MESSAGE } from "@/lib/sponsor/prepareAndSubmitSend";
-import { TokenType } from "@/lib/privacycash/tokens";
+import { submitClaim } from "@/lib/sponsor/prepareAndSubmitClaim";
+import { SESSION_MESSAGE } from "@/lib/sponsor/prepareAndSubmitSend";
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,23 +31,17 @@ export async function POST(request: NextRequest) {
       signedSweepTx,
       activityId,
       senderPublicKey,
-      receiverAddress,
-      amount,
-      token,
       lastValidBlockHeight,
     }: {
       signedDepositTx: string;
       signedSweepTx: string;
       activityId: string;
       senderPublicKey: string;
-      receiverAddress: string;
-      amount: number;
-      token: TokenType;
       lastValidBlockHeight?: number;
     } = body;
 
     // Validation
-    if (!signedDepositTx || !signedSweepTx || !activityId || !senderPublicKey || !receiverAddress || !amount || !token) {
+    if (!signedDepositTx || !signedSweepTx || !activityId || !senderPublicKey) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
@@ -83,32 +77,40 @@ export async function POST(request: NextRequest) {
     const connection = new Connection(rpcUrl, "confirmed");
 
     // Execute submit
-    const result = await submitSend({
+    const result = await submitClaim({
       connection,
       signedDepositTx,
       signedSweepTx,
       sessionSignature: sessionSigBytes,
       activityId,
       senderPublicKey: senderPubKey,
-      receiverAddress,
-      amount,
-      token,
       lastValidBlockHeight,
     });
 
     return NextResponse.json(result);
   } catch (error: any) {
-    console.error("Submit send error:", error);
+    console.error("Submit claim link error:", error);
 
     if (error.message === "Transaction expired. Please prepare again.") {
       return NextResponse.json(
         { error: "Transaction expired. Please prepare again." },
-        { status: 408 } // Request Timeout
+        { status: 408 }
+      );
+    }
+
+    if (error.message === "Activity not found") {
+      return NextResponse.json({ error: "Activity not found" }, { status: 404 });
+    }
+
+    if (error.message === "Claim link already processed") {
+      return NextResponse.json(
+        { error: "Claim link already processed" },
+        { status: 410 }
       );
     }
 
     return NextResponse.json(
-      { error: error.message ?? "Failed to submit send" },
+      { error: error.message ?? "Failed to submit claim link" },
       { status: 500 }
     );
   }

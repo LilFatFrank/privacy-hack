@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
+import nacl from "tweetnacl";
 
 import { submitFulfill } from "@/lib/sponsor/prepareAndSubmitFulfill";
+import { SESSION_MESSAGE } from "@/lib/sponsor/prepareAndSubmitSend";
 
 export async function POST(request: NextRequest) {
   try {
@@ -48,6 +50,21 @@ export async function POST(request: NextRequest) {
 
     // Parse inputs
     const payerPubKey = new PublicKey(payerPublicKey);
+
+    // Verify session signature proves ownership of payerPublicKey
+    const messageBytes = Buffer.from(SESSION_MESSAGE);
+    const isValid = nacl.sign.detached.verify(
+      messageBytes,
+      sessionSigBytes,
+      payerPubKey.toBytes()
+    );
+
+    if (!isValid) {
+      return NextResponse.json(
+        { error: "Invalid session signature for payer address" },
+        { status: 401 }
+      );
+    }
 
     // Get connection
     const rpcUrl = process.env.RPC_URL;

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Connection, PublicKey } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import bs58 from "bs58";
 import nacl from "tweetnacl";
 
-import { submitSend, SESSION_MESSAGE } from "@/lib/sponsor/prepareAndSubmitSend";
-import { TokenType } from "@/lib/privacycash/tokens";
+import { reclaimWithSignature } from "@/lib/sponsor/prepareAndSubmitClaim";
+import { SESSION_MESSAGE } from "@/lib/sponsor/prepareAndSubmitSend";
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,29 +28,17 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     const {
-      signedDepositTx,
-      signedSweepTx,
       activityId,
       senderPublicKey,
-      receiverAddress,
-      amount,
-      token,
-      lastValidBlockHeight,
     }: {
-      signedDepositTx: string;
-      signedSweepTx: string;
       activityId: string;
       senderPublicKey: string;
-      receiverAddress: string;
-      amount: number;
-      token: TokenType;
-      lastValidBlockHeight?: number;
     } = body;
 
     // Validation
-    if (!signedDepositTx || !signedSweepTx || !activityId || !senderPublicKey || !receiverAddress || !amount || !token) {
+    if (!activityId || !senderPublicKey) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { error: "Missing required fields: activityId, senderPublicKey" },
         { status: 400 }
       );
     }
@@ -72,6 +61,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Get sponsor keypair (for gas)
+    const sponsorKey = process.env.SPONSOR_PRIVATE_KEY;
+    if (!sponsorKey) {
+      return NextResponse.json(
+        { error: "SPONSOR_PRIVATE_KEY not configured" },
+        { status: 500 }
+      );
+    }
+    const sponsorKeypair = Keypair.fromSecretKey(bs58.decode(sponsorKey));
+
     // Get connection
     const rpcUrl = process.env.RPC_URL;
     if (!rpcUrl) {
@@ -82,33 +81,43 @@ export async function POST(request: NextRequest) {
     }
     const connection = new Connection(rpcUrl, "confirmed");
 
-    // Execute submit
-    const result = await submitSend({
+    // Execute reclaim
+    const result = await reclaimWithSignature({
       connection,
-      signedDepositTx,
-      signedSweepTx,
-      sessionSignature: sessionSigBytes,
       activityId,
+      sessionSignature: sessionSigBytes,
       senderPublicKey: senderPubKey,
-      receiverAddress,
-      amount,
-      token,
-      lastValidBlockHeight,
+      sponsorKeypair,
     });
 
     return NextResponse.json(result);
   } catch (error: any) {
-    console.error("Submit send error:", error);
+    console.error("Reclaim error:", error);
 
-    if (error.message === "Transaction expired. Please prepare again.") {
+    if (error.message === "Claim link not found") {
+      return NextResponse.json({ error: "Claim link not found" }, { status: 404 });
+    }
+
+    if (error.message === "Claim link already used or cancelled") {
       return NextResponse.json(
-        { error: "Transaction expired. Please prepare again." },
-        { status: 408 } // Request Timeout
+        { error: "Claim link already used or cancelled" },
+        { status: 410 }
       );
     }
 
+    if (error.message === "Not authorized to reclaim this link") {
+      return NextResponse.json(
+        { error: "Not authorized to reclaim this link" },
+        { status: 403 }
+      );
+    }
+
+    if (error.message === "Invalid session signature") {
+      return NextResponse.json({ error: "Invalid session signature" }, { status: 401 });
+    }
+
     return NextResponse.json(
-      { error: error.message ?? "Failed to submit send" },
+      { error: error.message ?? "Failed to reclaim" },
       { status: 500 }
     );
   }
