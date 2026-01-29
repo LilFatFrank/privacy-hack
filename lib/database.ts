@@ -95,7 +95,7 @@ export async function getActivity(id: string): Promise<Activity | null> {
 export async function updateActivityStatus(
   id: string,
   status: ActivityStatus,
-  updates?: Partial<Pick<Activity, "tx_hash" | "claim_tx_hash" | "receiver_hash">>
+  updates?: Partial<Pick<Activity, "tx_hash" | "claim_tx_hash" | "receiver_hash" | "sender_hash">>
 ): Promise<void> {
   const { error } = await supabase
     .from("activity")

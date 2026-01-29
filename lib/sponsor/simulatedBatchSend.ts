@@ -130,6 +130,12 @@ export async function simulatedBatchSend(
     status: "open",
     message: null,
     tx_hash: null,
+    burner_address: null,
+    encrypted_for_receiver: null,
+    encrypted_for_sender: null,
+    deposit_tx_hash: null,
+    claim_tx_hash: null,
+    receiver_address: null,
   });
   console.log("Activity created:", activity.id);
 
