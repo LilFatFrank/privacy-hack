@@ -25,9 +25,6 @@ export interface Activity {
   encrypted_for_sender?: EncryptedPayload | null;
   deposit_tx_hash?: string | null;
   claim_tx_hash?: string | null;
-
-  // Request-specific field (optional, only for request type)
-  receiver_address?: string | null;
 }
 
 // Supabase client

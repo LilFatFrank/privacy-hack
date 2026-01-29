@@ -103,11 +103,12 @@ export async function prepareFulfill(
   }
 
   // Get request details
-  if (!activity.receiver_address) {
+  // For requests, receiver_hash contains the actual address (not hashed)
+  if (!activity.receiver_hash) {
     throw new Error("Request missing receiver address");
   }
 
-  const receiverAddress = activity.receiver_address;
+  const receiverAddress = activity.receiver_hash;
   const amount = activity.amount;
 
   // Determine token
@@ -293,11 +294,12 @@ export async function submitFulfill(
     throw new Error("Request already fulfilled or cancelled");
   }
 
-  if (!activity.receiver_address) {
+  // For requests, receiver_hash contains the actual address (not hashed)
+  if (!activity.receiver_hash) {
     throw new Error("Request missing receiver address");
   }
 
-  const receiverAddress = activity.receiver_address;
+  const receiverAddress = activity.receiver_hash;
   const amount = activity.amount;
   const baseUnits = Math.floor(amount * 1_000_000);
 

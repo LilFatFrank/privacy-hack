@@ -41,17 +41,16 @@ export async function createRequest(
   const { requesterAddress, payerAddress, amount, token, message } = params;
 
   // Create activity record
-  // Only include fields that exist in the database
+  // For requests: store actual receiver address (not hashed) so we can fulfill
   const activity = await createActivity({
     type: "request",
     sender_hash: payerAddress ? hashAddress(payerAddress) : "", // Empty if open request
-    receiver_hash: hashAddress(requesterAddress),
+    receiver_hash: requesterAddress, // Actual address for requests (needed for withdraw)
     amount,
     token_address: TOKEN_MINTS[token].toBase58(),
     status: "open",
     message: message || null,
     tx_hash: null,
-    receiver_address: requesterAddress, // Stored unhashed for requests
   });
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
@@ -82,9 +81,8 @@ export async function cancelRequest(
     throw new Error("Request already fulfilled or cancelled");
   }
 
-  // Verify requester
-  const requesterHash = hashAddress(requesterAddress);
-  if (activity.receiver_hash !== requesterHash) {
+  // Verify requester (for requests, receiver_hash is the actual address)
+  if (activity.receiver_hash !== requesterAddress) {
     throw new Error("Not the requester");
   }
 

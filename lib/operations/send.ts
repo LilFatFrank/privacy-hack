@@ -79,7 +79,6 @@ export async function directSend(
     encrypted_for_sender: null,
     deposit_tx_hash: null,
     claim_tx_hash: null,
-    receiver_address: null,
   });
 
   try {
