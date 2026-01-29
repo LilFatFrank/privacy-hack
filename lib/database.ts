@@ -19,15 +19,15 @@ export interface Activity {
   created_at: number;
   updated_at: number;
 
-  // Claim-specific fields (null for send/request)
-  burner_address: string | null;
-  encrypted_for_receiver: EncryptedPayload | null;
-  encrypted_for_sender: EncryptedPayload | null;
-  deposit_tx_hash: string | null;
-  claim_tx_hash: string | null;
+  // Claim-specific fields (optional, only for claim type)
+  burner_address?: string | null;
+  encrypted_for_receiver?: EncryptedPayload | null;
+  encrypted_for_sender?: EncryptedPayload | null;
+  deposit_tx_hash?: string | null;
+  claim_tx_hash?: string | null;
 
-  // Request-specific field: unhashed address needed to send funds
-  receiver_address: string | null;
+  // Request-specific field (optional, only for request type)
+  receiver_address?: string | null;
 }
 
 // Supabase client
@@ -59,7 +59,12 @@ export async function createActivity(
     updated_at: now,
   };
 
-  const { error } = await supabase.from("activity").insert([record]);
+  // Remove undefined fields to avoid Supabase schema errors
+  const cleanRecord = Object.fromEntries(
+    Object.entries(record).filter(([_, v]) => v !== undefined)
+  );
+
+  const { error } = await supabase.from("activity").insert([cleanRecord]);
 
   if (error) {
     throw new Error(`Failed to create activity: ${error.message}`);
