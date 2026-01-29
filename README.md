@@ -1,179 +1,244 @@
 # PrivacyCash
 
-This repository contains helper flows, sponsor logic, and test scripts used to support **PrivacyCash** deposits and withdrawals on Solana with **automatic gas sponsorship**.
+A privacy-focused payment platform built on Solana that enables users to send and receive funds without needing to hold native SOL for gas fees. The platform automatically sponsors all gas costs through a designated sponsor wallet while maintaining privacy through on-chain mixing.
 
-The goal is simple:
+## Features
 
-- Users should **not need SOL** to interact
-- Gas is **profiled and pre‑funded** via a sponsor wallet
-- No funds are lost, even if a transaction fails midway
+- **Direct Sends** - Instant fund transfers through the privacy pool
+- **Claim Links** - Passphrase-protected fund sharing with unlimited validity
+- **Payment Requests** - Request payments from anyone with optional payer restrictions
+- **Gas Sponsorship** - Users never need to hold SOL for transaction fees
+- **Privacy Preservation** - Burner wallets break on-chain privacy links
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 .
-├── app/                     # App entry (if any)
-├── cache/                   # Local cache (gitignored)
+├── app/
+│   └── api/
+│       ├── send/                    # Direct send endpoints
+│       │   ├── prepare/route.ts
+│       │   └── submit/route.ts
+│       ├── send_claim/              # Claim link endpoints
+│       │   ├── prepare/route.ts
+│       │   ├── submit/route.ts
+│       │   ├── claim/route.ts
+│       │   └── reclaim/route.ts
+│       ├── request/                 # Payment request endpoints
+│       │   ├── create/route.ts
+│       │   ├── [id]/route.ts
+│       │   ├── cancel/route.ts
+│       │   └── fulfill/
+│       │       ├── prepare/route.ts
+│       │       └── submit/route.ts
+│       └── activity/                # Activity history endpoints
+│           ├── [id]/route.ts
+│           └── user/route.ts
+│
 ├── lib/
-│   ├── flows/               # High‑level gas & flow helpers
-│   │   ├── ensureGasForClaim.ts
-│   │   ├── ensureGasForDeposit.ts
-│   │   └── ensureGasForWithdraw.ts
+│   ├── sponsor/                     # Gas sponsorship & transaction building
+│   │   ├── sponsorWallet.ts
+│   │   ├── sponsorSol.ts
+│   │   ├── sponsorPolicy.ts
+│   │   ├── prepareAndSubmitSend.ts
+│   │   ├── prepareAndSubmitClaim.ts
+│   │   ├── prepareAndSubmitFulfill.ts
+│   │   └── depositBuilder.ts
 │   │
-│   ├── gas/                 # Gas estimation & profiling
+│   ├── privacycash/                 # PrivacyCash SDK wrappers
+│   │   ├── client.ts
+│   │   ├── tokens.ts
+│   │   ├── deposit.ts
+│   │   ├── withdraw.ts
+│   │   └── index.ts
+│   │
+│   ├── flows/                       # High-level gas & flow helpers
+│   │   ├── ensureGasForDeposit.ts
+│   │   ├── ensureGasForWithdraw.ts
+│   │   └── ensureGasForClaim.ts
+│   │
+│   ├── gas/                         # Gas estimation & profiling
 │   │   ├── constants.ts
 │   │   ├── gasEstimator.ts
 │   │   └── gasProfiles.ts
 │   │
-│   ├── privacycash/         # Thin wrappers around SDK
-│   │   ├── client.ts
-│   │   ├── deposit.ts
-│   │   ├── withdraw.ts
-│   │   ├── tokens.ts
-│   │   └── index.ts
-│   │
-│   ├── sponsor/             # Sponsor wallet logic
-│   │   ├── sponsorPolicy.ts
-│   │   ├── sponsorSol.ts
-│   │   └── sponsorWallet.ts
-│   │
-│   └── burner-wallet.ts     # Burner wallet utilities
+│   ├── crypto.ts                    # Encryption utilities
+│   ├── database.ts                  # Supabase operations
+│   └── burner-wallet.ts             # Ephemeral wallet generation
 │
-├── tests/
-│   ├── usdc-mainnet.test.ts # Mainnet USDC deposit/withdraw test
-│   └── ...
+├── supabase/
+│   ├── schema.sql                   # Database schema
+│   └── migrations/
 │
-├── .env.local               # Environment variables (not committed)
-├── package.json
-├── bun.lockb
-└── README.md
+├── tests/                           # Test suites
+│
+├── .env.example                     # Environment template
+└── package.json
 ```
 
 ---
 
-## 🔑 Environment Setup
+## Environment Setup
 
-Create a `.env.local` file at the root of the repo:
+Copy `.env.example` to `.env` and fill in the values:
 
-```
-# RPC
-HELIUS_RPC=https://mainnet.helius-rpc-url
+```env
+# Solana RPC
+RPC_URL=
 
-# Sender wallet (user / burner owner)
-TEST_PRIVATE_KEY=BASE58_PRIVATE_KEY
+# Wallets (base58 encoded secret keys)
+SPONSOR_PRIVATE_KEY=
+TEST_PRIVATE_KEY=
+TEST_REQUESTOR_PRIVATE_KEY=          # Optional: used for request/claim tests
 
-# Sponsor wallet (pays gas)
-SPONSOR_PRIVATE_KEY=BASE58_PRIVATE_KEY
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
 
-# Safety switch for mainnet tests
-CONFIRM_MAINNET_TEST=true
+# App
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+# Testing
+CONFIRM_MAINNET_TEST=                # Set to "true" to enable mainnet tests
 ```
 
 ---
 
-## 🧠 How Gas Sponsorship Works
+## API Endpoints
 
-This repo does **not** try to simulate exact transaction gas.
+All write endpoints require `X-Session-Signature` header (base64 encoded 64-byte signature proving wallet ownership).
 
-Instead it uses **profiling‑based sponsorship**:
+### Direct Send
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/send/prepare` | POST | Get unsigned deposit & sweep transactions |
+| `/api/send/submit` | POST | Submit signed transactions |
+
+### Claim Links
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/send_claim/prepare` | POST | Create claim link, returns passphrase |
+| `/api/send_claim/submit` | POST | Submit signed deposit for link creation |
+| `/api/send_claim/claim` | POST | Receiver redeems with passphrase |
+| `/api/send_claim/reclaim` | POST | Sender reclaims unclaimed link |
+
+### Payment Requests
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/request/create` | POST | Create payment request |
+| `/api/request/[id]` | GET | Get request details |
+| `/api/request/cancel` | POST | Cancel request |
+| `/api/request/fulfill/prepare` | POST | Prepare payment for request |
+| `/api/request/fulfill/submit` | POST | Submit payment |
+
+### Activity
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/activity/[id]` | GET | Get specific activity |
+| `/api/activity/user?address=...` | GET | Get user's history & stats |
+
+---
+
+## Payment Flows
+
+### 1. Direct Send
+
+Sender deposits to PrivacyCash, funds immediately withdraw to receiver. Both transactions are gas-sponsored.
+
+### 2. Claim Links
+
+1. Sender deposits to PrivacyCash
+2. Funds withdraw to ephemeral "burner" wallet
+3. Burner key encrypted with passphrase (for receiver) and session signature (for sender reclaim)
+4. Receiver claims with passphrase, or sender can reclaim anytime
+5. No expiration - links remain open indefinitely
+
+### 3. Payment Requests
+
+1. Requestor creates a payment request
+2. Payer fulfills it through the privacy flow
+3. Can optionally restrict to specific payer address
+
+---
+
+## Gas Sponsorship
+
+This repo uses **profiling-based sponsorship** instead of simulation:
 
 1. Transactions are profiled once on mainnet
 2. A safe SOL buffer is defined per flow
-3. Sponsor pre‑funds the burner / sender wallet
+3. Sponsor pre-funds the sender/burner wallet
 4. Transaction executes
-5. Any leftover SOL stays in the burner wallet
+5. Remaining SOL swept back to sponsor
 
-This avoids:
-
-- RPC‑dependent simulations
-- CU variance issues
-- Version drift bugs
+This avoids RPC-dependent simulations and CU variance issues.
 
 ---
 
-## 🔁 Flow Helpers
+## Fee Model
 
-### `ensureGasForDeposit`
+```
+0.006 SOL x recipients + 0.35% of withdrawal amount
+```
 
-Ensures the sender has enough SOL to:
-
-- Create ATA (if needed)
-- Pay compute + signatures
-- Perform USDC deposit
-
-### `ensureGasForWithdraw`
-
-Ensures the sender has enough SOL to:
-
-- Execute PrivacyCash withdrawal
-- Pay protocol + transfer fees
-
-### `ensureGasForClaim`
-
-Used when a recipient claims funds from a link / UTXO
-
-All helpers:
-
-- Check current SOL balance
-- Top up only if required
-- Use sponsor wallet as payer
+- `0.006 SOL` - gas & infra fee (paid in SOL, sponsored)
+- `0.35%` - protocol fee (deducted from token)
 
 ---
 
-## 🧪 Running Tests (Bun)
+## Running Tests
 
 Install dependencies:
 
-```
+```bash
 bun install
 ```
 
-Run USDC mainnet test:
+Run tests:
 
+```bash
+# USDC mainnet test
+bun run test:usdc
+
+# SOL mainnet test
+bun run test:sol
+
+# Direct send flow
+bun run test:send
+
+# Claim link flow
+bun run test:claim
+
+# Request fulfillment
+bun run test:fulfill
+
+# Dry run (simulation only)
+bun run test:dry
 ```
-CONFIRM_MAINNET_TEST=true bun run test:usdc
-```
-
-This test:
-
-1. Deposits USDC into PrivacyCash
-2. Waits for indexer sync
-3. Verifies private balance
-4. Withdraws back to sender
 
 ---
 
-## 💸 Fee Model (Important)
+## Tech Stack
 
-```
-0.006 SOL × recipients + 0.35% of withdrawal amount
-```
-
-- `0.006 SOL` → gas & infra fee (paid in SOL)
-- `0.35%` → protocol fee (deducted from USDC)
-
-SOL and USDC fees are **independent**.
+- **Next.js** - Full-stack React framework
+- **Solana Web3.js** - Blockchain interaction
+- **PrivacyCash SDK** - Privacy mixing protocol
+- **Supabase** - PostgreSQL database
+- **TweetNaCl** - Encryption
+- **Bun** - JavaScript runtime
 
 ---
 
-## ✅ Status
-
-- ✔ Gas sponsorship implemented
-- ✔ Deposit & withdraw flows working
-- ✔ Mainnet tested with USDC
-- ✔ No pending / lost funds
-
----
-
-## 🧩 Notes
+## Notes
 
 - Burner wallets may retain small SOL dust
 - Sponsor wallet can be rotated anytime
-- Indexer delay is expected (30–60s)
-
----
-
-If something looks unused but is green — **it is intentional**.
-Most files are modular to support future flows.
+- Indexer delay is expected (15-60s)
+- Session signatures prove wallet ownership without storing keys
