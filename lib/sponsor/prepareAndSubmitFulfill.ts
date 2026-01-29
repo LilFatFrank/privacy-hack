@@ -55,6 +55,7 @@ export interface PrepareFulfillResult {
   unsignedSweepTx: string;
   fundTx: string | null;
   sweepAmount: number;
+  lastValidBlockHeight: number; // For checking if tx is still valid
   // Request details for UI confirmation
   amount: number;
   token: TokenType;
@@ -145,7 +146,7 @@ export async function prepareFulfill(
   // Step 2: Build deposit transaction
   console.log("\n[2/4] Building deposit transaction...");
 
-  const { transaction: depositTx, mintAddress } = await buildDepositSPLTransaction({
+  const { transaction: depositTx, mintAddress, lastValidBlockHeight: depositLastValidBlockHeight } = await buildDepositSPLTransaction({
     connection,
     userPublicKey: payerPublicKey,
     sessionSignature,
@@ -177,7 +178,7 @@ export async function prepareFulfill(
   // Step 4: Build sweep transaction
   console.log("\n[4/4] Building sweep transaction...");
 
-  const { blockhash: sweepBlockhash } = await connection.getLatestBlockhash();
+  const { blockhash: sweepBlockhash, lastValidBlockHeight: sweepLastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
 
   const sweepMessage = new TransactionMessage({
     payerKey: sponsorKeypair.publicKey,
@@ -200,12 +201,16 @@ export async function prepareFulfill(
   const unsignedDepositTx = Buffer.from(depositTx.serialize()).toString("base64");
   const unsignedSweepTx = Buffer.from(sweepTx.serialize()).toString("base64");
 
+  // Use the earlier expiration to be safe
+  const lastValidBlockHeight = Math.min(depositLastValidBlockHeight, sweepLastValidBlockHeight);
+
   return {
     activityId,
     unsignedDepositTx,
     unsignedSweepTx,
     fundTx,
     sweepAmount: exactRemaining,
+    lastValidBlockHeight,
     amount,
     token,
     receiverAddress,
@@ -223,6 +228,7 @@ export interface SubmitFulfillParams {
   sessionSignature: Uint8Array;
   activityId: string;
   payerPublicKey: PublicKey;
+  lastValidBlockHeight?: number; // Optional: for checking tx validity
 }
 
 export interface SubmitFulfillResult {
@@ -275,11 +281,21 @@ export async function submitFulfill(
     sessionSignature,
     activityId,
     payerPublicKey,
+    lastValidBlockHeight,
   } = params;
 
   console.log("=== Submit Fulfill ===");
   console.log("Activity:", activityId);
   console.log("Payer:", payerPublicKey.toBase58());
+
+  // Check if transaction is still valid (if lastValidBlockHeight provided)
+  if (lastValidBlockHeight) {
+    const currentBlockHeight = await connection.getBlockHeight("confirmed");
+    if (currentBlockHeight > lastValidBlockHeight) {
+      throw new Error("Transaction expired. Please prepare again.");
+    }
+    console.log(`Block height check: ${currentBlockHeight} <= ${lastValidBlockHeight} ✓`);
+  }
 
   // Fetch activity to get details
   const activity = await getActivity(activityId);

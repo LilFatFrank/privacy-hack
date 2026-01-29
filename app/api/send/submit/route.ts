@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
       receiverAddress,
       amount,
       token,
+      lastValidBlockHeight,
     }: {
       signedDepositTx: string;
       signedSweepTx: string;
@@ -41,6 +42,7 @@ export async function POST(request: NextRequest) {
       receiverAddress: string;
       amount: number;
       token: TokenType;
+      lastValidBlockHeight?: number;
     } = body;
 
     // Validation
@@ -75,11 +77,19 @@ export async function POST(request: NextRequest) {
       receiverAddress,
       amount,
       token,
+      lastValidBlockHeight,
     });
 
     return NextResponse.json(result);
   } catch (error: any) {
     console.error("Submit send error:", error);
+
+    if (error.message === "Transaction expired. Please prepare again.") {
+      return NextResponse.json(
+        { error: "Transaction expired. Please prepare again." },
+        { status: 408 } // Request Timeout
+      );
+    }
 
     return NextResponse.json(
       { error: error.message ?? "Failed to submit send" },

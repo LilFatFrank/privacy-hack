@@ -81,10 +81,12 @@ describe("Prepare/Submit Send Flow via API", () => {
     console.log("  Activity ID:", prepareResult.activityId);
     console.log("  Fund TX:", prepareResult.fundTx || "(not needed)");
     console.log("  Sweep amount:", prepareResult.sweepAmount, "lamports");
+    console.log("  Last valid block height:", prepareResult.lastValidBlockHeight);
 
     expect(prepareResult.activityId).toBeDefined();
     expect(prepareResult.unsignedDepositTx).toBeDefined();
     expect(prepareResult.unsignedSweepTx).toBeDefined();
+    expect(prepareResult.lastValidBlockHeight).toBeDefined();
 
     // Step 2: Sign transactions (simulating wallet.signAllTransactions)
     console.log("\n=== Step 2: Sign Transactions (simulated wallet) ===");
@@ -121,6 +123,7 @@ describe("Prepare/Submit Send Flow via API", () => {
         receiverAddress,
         amount,
         token,
+        lastValidBlockHeight: prepareResult.lastValidBlockHeight,
       }),
     });
 

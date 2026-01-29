@@ -148,12 +148,14 @@ describe("Prepare/Submit Request Fulfill Flow via API", () => {
     console.log("  Activity ID:", prepareResult.activityId);
     console.log("  Fund TX:", prepareResult.fundTx || "(not needed)");
     console.log("  Sweep amount:", prepareResult.sweepAmount, "lamports");
+    console.log("  Last valid block height:", prepareResult.lastValidBlockHeight);
     console.log("  Amount:", prepareResult.amount, prepareResult.token);
     console.log("  Receiver:", prepareResult.receiverAddress);
 
     expect(prepareResult.activityId).toBe(activityId);
     expect(prepareResult.unsignedDepositTx).toBeDefined();
     expect(prepareResult.unsignedSweepTx).toBeDefined();
+    expect(prepareResult.lastValidBlockHeight).toBeDefined();
     expect(prepareResult.amount).toBe(amount);
     expect(prepareResult.receiverAddress).toBe(requestorKeypair.publicKey.toBase58());
 
@@ -189,6 +191,7 @@ describe("Prepare/Submit Request Fulfill Flow via API", () => {
         signedSweepTx,
         activityId,
         payerPublicKey: payerKeypair.publicKey.toBase58(),
+        lastValidBlockHeight: prepareResult.lastValidBlockHeight,
       }),
     });
 

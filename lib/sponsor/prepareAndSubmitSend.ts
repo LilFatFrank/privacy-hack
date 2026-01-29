@@ -70,6 +70,7 @@ export interface PrepareSendResult {
   unsignedSweepTx: string; // base64 serialized
   fundTx: string | null;
   sweepAmount: number;
+  lastValidBlockHeight: number; // For checking if tx is still valid
 }
 
 /**
@@ -135,7 +136,7 @@ export async function prepareSend(
   // Step 2: Build deposit transaction (unsigned)
   console.log("\n[3/5] Building deposit transaction...");
 
-  const { transaction: depositTx, mintAddress } = await buildDepositSPLTransaction({
+  const { transaction: depositTx, mintAddress, lastValidBlockHeight: depositLastValidBlockHeight } = await buildDepositSPLTransaction({
     connection,
     userPublicKey: senderPublicKey,
     sessionSignature,
@@ -170,7 +171,7 @@ export async function prepareSend(
   // Step 4: Build sweep transaction with exact amount
   console.log("\n[5/5] Building sweep transaction...");
 
-  const { blockhash: sweepBlockhash } = await connection.getLatestBlockhash();
+  const { blockhash: sweepBlockhash, lastValidBlockHeight: sweepLastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
 
   const sweepMessage = new TransactionMessage({
     payerKey: sponsorKeypair.publicKey, // Sponsor pays sweep fee
@@ -195,12 +196,16 @@ export async function prepareSend(
   const unsignedDepositTx = Buffer.from(depositTx.serialize()).toString("base64");
   const unsignedSweepTx = Buffer.from(sweepTx.serialize()).toString("base64");
 
+  // Use the earlier expiration to be safe
+  const lastValidBlockHeight = Math.min(depositLastValidBlockHeight, sweepLastValidBlockHeight);
+
   return {
     activityId: activity.id,
     unsignedDepositTx,
     unsignedSweepTx,
     fundTx,
     sweepAmount: exactRemaining,
+    lastValidBlockHeight,
   };
 }
 
@@ -218,6 +223,7 @@ export interface SubmitSendParams {
   receiverAddress: string;
   amount: number;
   token: TokenType;
+  lastValidBlockHeight?: number; // Optional: for checking tx validity
 }
 
 export interface SubmitSendResult {
@@ -271,6 +277,7 @@ export async function submitSend(
     receiverAddress,
     amount,
     token,
+    lastValidBlockHeight,
   } = params;
 
   const baseUnits = Math.floor(amount * 1_000_000);
@@ -279,6 +286,15 @@ export async function submitSend(
   console.log("=== Submit Send ===");
   console.log("Activity:", activityId);
   console.log("Sender:", senderPublicKey.toBase58());
+
+  // Check if transaction is still valid (if lastValidBlockHeight provided)
+  if (lastValidBlockHeight) {
+    const currentBlockHeight = await connection.getBlockHeight("confirmed");
+    if (currentBlockHeight > lastValidBlockHeight) {
+      throw new Error("Transaction expired. Please prepare again.");
+    }
+    console.log(`Block height check: ${currentBlockHeight} <= ${lastValidBlockHeight} ✓`);
+  }
 
   try {
     // Step 1: Submit deposit to relayer

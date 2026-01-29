@@ -75,6 +75,7 @@ export interface BuildDepositResult {
   transaction: VersionedTransaction;
   mintAddress: PublicKey;
   encryptedOutput: Uint8Array;
+  lastValidBlockHeight: number;
 }
 
 /**
@@ -351,8 +352,8 @@ export async function buildDepositSPLTransaction(
     units: 500_000,
   });
 
-  // Build transaction
-  const { blockhash } = await connection.getLatestBlockhash();
+  // Build transaction - use "confirmed" for fresher blockhash
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
 
   const messageV0 = new TransactionMessage({
     payerKey: userPublicKey,
@@ -366,5 +367,6 @@ export async function buildDepositSPLTransaction(
     transaction,
     mintAddress: tokenInfo.pubkey,
     encryptedOutput: encryptedOutput1,
+    lastValidBlockHeight,
   };
 }

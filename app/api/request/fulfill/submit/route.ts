@@ -29,11 +29,13 @@ export async function POST(request: NextRequest) {
       signedSweepTx,
       activityId,
       payerPublicKey,
+      lastValidBlockHeight,
     }: {
       signedDepositTx: string;
       signedSweepTx: string;
       activityId: string;
       payerPublicKey: string;
+      lastValidBlockHeight?: number;
     } = body;
 
     // Validation
@@ -65,6 +67,7 @@ export async function POST(request: NextRequest) {
       sessionSignature: sessionSigBytes,
       activityId,
       payerPublicKey: payerPubKey,
+      lastValidBlockHeight,
     });
 
     return NextResponse.json(result);
@@ -79,6 +82,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Request already fulfilled or cancelled" },
         { status: 410 }
+      );
+    }
+
+    if (error.message === "Transaction expired. Please prepare again.") {
+      return NextResponse.json(
+        { error: "Transaction expired. Please prepare again." },
+        { status: 408 } // Request Timeout
       );
     }
 
