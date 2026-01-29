@@ -63,87 +63,127 @@ Single `activity` table for all operations:
 ```
 activity {
   id
-  type                  // send | request | claim
-  senderHash
-  receiverHash          // null for open requests, populated on claim
+  type                  // send | request | send_claim
+  sender_address
+  receiver_address      // null for open requests, populated on claim
   amount
-  tokenAddress          // null for native token
+  token_address         // token mint address
   status                // open | settled | cancelled
   message               // optional
-  txHash                // settlement tx
-  createdAt
-  updatedAt
+  tx_hash               // settlement tx
+  created_at
+  updated_at
 
-  // claim-specific (null for send/request)
-  burnerAddress
-  encryptedForReceiver
-  encryptedForSender
-  depositTxHash         // sender → privacy pool
-  claimTxHash           // burner → receiver
+  // send_claim-specific (null for send/request)
+  burner_address
+  encrypted_for_receiver  // passphrase-encrypted burner key
+  encrypted_for_sender    // session-signature-encrypted burner key
+  deposit_tx_hash         // sender → privacy pool
+  claim_tx_hash           // burner → receiver
 }
 ```
 
 ## Design Decisions
 
-- **Single activity table:** All operations (send, request, claim) in one table with `type` discriminator
-- **Hashed addresses:** sender/receiver addresses stored as hashes for privacy
-- **Burner address unhashed:** needed for balance checks
+- **Single activity table:** All operations (send, request, send_claim) in one table with `type` discriminator
+- **Session signature auth:** All write APIs verify wallet ownership via signed message
+- **Prepare/submit pattern:** Transactions built server-side, signed client-side, submitted server-side
+- **Gas sponsorship:** Sponsor pre-funds users, sweeps remaining SOL after transactions
 - **Consistent status:** `open | settled | cancelled` across all operations
-- **Consistent naming:** `sender_hash`, `receiver_hash` (snake_case)
+- **Consistent naming:** `sender_address`, `receiver_address` (snake_case)
 - **No expiration:** links stay open indefinitely
 - **Message optional:** across all operations
-- **Type values:** `send | request | claim`
-- **Receiver address for requests:** stored unhashed since requester reveals their address
+- **Type values:** `send | request | send_claim`
+- **Claim link encryption:** Passphrase for receiver, session signature for sender reclaim
 
 ## API Endpoints
 
-### Direct Send
+All write APIs require a session signature in the `X-Session-Signature` header.
+The session signature proves wallet ownership by signing "Privacy Money account sign in".
+
+### Direct Send (Prepare/Submit Pattern)
+
+**Prepare send:**
 ```
-POST /api/send
+POST /api/send/prepare
+Headers: X-Session-Signature: <base64 signature>
 {
-  senderPrivateKey: string,
+  senderPublicKey: string,
   receiverAddress: string,
   amount: number,
   token: "USDC" | "SOL",
   message?: string
 }
-→ { activityId, fundTx, depositTx, withdrawTx, sweepTx, amountSent, feesPaid }
+→ { activityId, unsignedDepositTx, unsignedSweepTx, lastValidBlockHeight }
 ```
 
-### Claim Links
-
-**Create claim link:**
+**Submit send:**
 ```
-POST /api/claim/create
+POST /api/send/submit
+Headers: X-Session-Signature: <base64 signature>
 {
-  senderPrivateKey: string,
+  signedDepositTx: string,
+  signedSweepTx: string,
+  activityId: string,
+  senderPublicKey: string,
+  receiverAddress: string,
+  amount: number,
+  token: "USDC" | "SOL",
+  lastValidBlockHeight?: number
+}
+→ { depositTx, withdrawTx, sweepTx, amountSent, feesPaid }
+```
+
+### Claim Links (send_claim)
+
+**Prepare claim link:**
+```
+POST /api/send_claim/prepare
+Headers: X-Session-Signature: <base64 signature>
+{
+  senderPublicKey: string,
   amount: number,
   token: "USDC" | "SOL",
   message?: string
 }
-→ { activityId, claimLink, passphrase, depositTx }
+→ { activityId, unsignedDepositTx, unsignedSweepTx, passphrase, lastValidBlockHeight }
 ```
 **Note:** Send passphrase via separate channel (SMS/email)!
 
-**Redeem claim link:**
+**Submit claim link:**
 ```
-POST /api/claim/redeem
+POST /api/send_claim/submit
+Headers: X-Session-Signature: <base64 signature>
+{
+  signedDepositTx: string,
+  signedSweepTx: string,
+  activityId: string,
+  senderPublicKey: string,
+  lastValidBlockHeight?: number
+}
+→ { depositTx, withdrawTx }
+```
+
+**Claim (receiver redeems with passphrase):**
+```
+POST /api/send_claim/claim
 {
   activityId: string,
   passphrase: string,
   receiverAddress: string
 }
-→ { withdrawTx }
+→ { txSignature, amountReceived }
 ```
 
 **Reclaim (sender takes back):**
 ```
-POST /api/claim/reclaim
+POST /api/send_claim/reclaim
+Headers: X-Session-Signature: <base64 signature>
 {
   activityId: string,
-  senderPrivateKey: string
+  senderPublicKey: string
 }
-→ { withdrawTx }
+→ { txSignature, amountReclaimed }
 ```
 
 ### Payment Requests
@@ -151,6 +191,7 @@ POST /api/claim/reclaim
 **Create request:**
 ```
 POST /api/request/create
+Headers: X-Session-Signature: <base64 signature>
 {
   requesterAddress: string,
   payerAddress?: string,  // Optional - restrict to specific payer
@@ -161,19 +202,35 @@ POST /api/request/create
 → { activityId, requestLink }
 ```
 
-**Fulfill request:**
+**Prepare fulfill:**
 ```
-POST /api/request/fulfill
+POST /api/request/fulfill/prepare
+Headers: X-Session-Signature: <base64 signature>
 {
   activityId: string,
-  payerPrivateKey: string
+  payerPublicKey: string
 }
-→ { fundTx, depositTx, withdrawTx, sweepTx, amountReceived, feesPaid }
+→ { unsignedDepositTx, unsignedSweepTx, lastValidBlockHeight }
+```
+
+**Submit fulfill:**
+```
+POST /api/request/fulfill/submit
+Headers: X-Session-Signature: <base64 signature>
+{
+  signedDepositTx: string,
+  signedSweepTx: string,
+  activityId: string,
+  payerPublicKey: string,
+  lastValidBlockHeight?: number
+}
+→ { depositTx, withdrawTx, amountReceived, feesPaid }
 ```
 
 **Cancel request:**
 ```
 POST /api/request/cancel
+Headers: X-Session-Signature: <base64 signature>
 {
   activityId: string,
   requesterAddress: string

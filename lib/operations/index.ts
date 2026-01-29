@@ -1,12 +1,11 @@
 /**
  * Payment Operations
  *
- * All three payment operation types:
- * - send: Direct send to a recipient (sender hidden)
- * - claim: Claimable link with passphrase (sender can reclaim)
- * - request: Payment request (payer fulfills)
+ * Request operation types:
+ * - request: Payment request (payer fulfills via prepare/submit)
+ *
+ * Note: send and send_claim operations use prepare/submit pattern
+ * defined in lib/sponsor/prepareAndSubmitSend.ts and prepareAndSubmitClaim.ts
  */
 
-export * from "./send";
-export * from "./claim";
 export * from "./request";
