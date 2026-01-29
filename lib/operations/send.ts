@@ -13,7 +13,6 @@ import bs58 from "bs58";
 import { sponsoredSend, SponsoredSendResult } from "../sponsor/sponsoredSend";
 import {
   createActivity,
-  hashAddress,
   Activity,
   updateActivityStatus,
 } from "../database";
@@ -67,8 +66,8 @@ export async function directSend(
   // Create activity record
   const activity = await createActivity({
     type: "send",
-    sender_hash: hashAddress(senderKeypair.publicKey.toBase58()),
-    receiver_hash: hashAddress(receiverAddress),
+    sender_address: senderKeypair.publicKey.toBase58(),
+    receiver_address: receiverAddress,
     amount,
     token_address: TOKEN_MINTS[token].toBase58(),
     status: "open",

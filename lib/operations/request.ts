@@ -9,7 +9,6 @@
 
 import {
   createActivity,
-  hashAddress,
   getActivity,
   updateActivityStatus,
 } from "../database";
@@ -41,11 +40,10 @@ export async function createRequest(
   const { requesterAddress, payerAddress, amount, token, message } = params;
 
   // Create activity record
-  // For requests: store actual receiver address (not hashed) so we can fulfill
   const activity = await createActivity({
     type: "request",
-    sender_hash: payerAddress ? hashAddress(payerAddress) : "", // Empty if open request
-    receiver_hash: requesterAddress, // Actual address for requests (needed for withdraw)
+    sender_address: payerAddress || "", // Empty if open request (anyone can pay)
+    receiver_address: requesterAddress,
     amount,
     token_address: TOKEN_MINTS[token].toBase58(),
     status: "open",
@@ -81,8 +79,8 @@ export async function cancelRequest(
     throw new Error("Request already fulfilled or cancelled");
   }
 
-  // Verify requester (for requests, receiver_hash is the actual address)
-  if (activity.receiver_hash !== requesterAddress) {
+  // Verify requester
+  if (activity.receiver_address !== requesterAddress) {
     throw new Error("Not the requester");
   }
 

@@ -12,7 +12,6 @@ import bs58 from "bs58";
 
 import {
   createActivity,
-  hashAddress,
   getActivity,
   updateActivityStatus,
 } from "../database";
@@ -104,8 +103,8 @@ export async function createClaimLink(
   // Create activity record
   const activity = await createActivity({
     type: "claim",
-    sender_hash: hashAddress(senderKeypair.publicKey.toBase58()),
-    receiver_hash: null, // Unknown until claimed
+    sender_address: senderKeypair.publicKey.toBase58(),
+    receiver_address: null, // Unknown until claimed
     amount,
     token_address: TOKEN_MINTS[token].toBase58(),
     status: "open",
@@ -290,7 +289,7 @@ export async function claimPayment(
 
   // Update activity
   await updateActivityStatus(activity.id, "settled", {
-    receiver_hash: hashAddress(receiverAddress),
+    receiver_address: receiverAddress,
     claim_tx_hash: withdrawResult.tx,
   });
 
@@ -327,8 +326,7 @@ export async function reclaimPayment(
   }
 
   // Verify sender
-  const senderHash = hashAddress(senderKeypair.publicKey.toBase58());
-  if (activity.sender_hash !== senderHash) {
+  if (activity.sender_address !== senderKeypair.publicKey.toBase58()) {
     throw new Error("Not the sender of this claim link");
   }
 

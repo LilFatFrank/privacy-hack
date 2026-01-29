@@ -1,5 +1,4 @@
 import { createClient } from "@supabase/supabase-js";
-import { createHmac } from "crypto";
 import { EncryptedPayload } from "./crypto";
 
 // Types
@@ -9,8 +8,8 @@ export type ActivityStatus = "open" | "settled" | "cancelled";
 export interface Activity {
   id: string;
   type: ActivityType;
-  sender_hash: string;
-  receiver_hash: string | null;
+  sender_address: string;
+  receiver_address: string | null;
   amount: number;
   token_address: string | null; // null for native SOL
   status: ActivityStatus;
@@ -32,15 +31,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
-
-// Hash address with secret
-export function hashAddress(address: string): string {
-  const secret = process.env.HASH_SECRET;
-  if (!secret) {
-    throw new Error("HASH_SECRET not configured");
-  }
-  return createHmac("sha256", secret).update(address).digest("hex");
-}
 
 // Create activity
 export async function createActivity(
@@ -92,7 +82,7 @@ export async function getActivity(id: string): Promise<Activity | null> {
 export async function updateActivityStatus(
   id: string,
   status: ActivityStatus,
-  updates?: Partial<Pick<Activity, "tx_hash" | "claim_tx_hash" | "receiver_hash" | "sender_hash">>
+  updates?: Partial<Pick<Activity, "tx_hash" | "claim_tx_hash" | "receiver_address" | "sender_address">>
 ): Promise<void> {
   const { error } = await supabase
     .from("activity")
@@ -112,12 +102,10 @@ export async function updateActivityStatus(
 export async function getActivitiesForUser(
   userAddress: string
 ): Promise<Activity[]> {
-  const userHash = hashAddress(userAddress);
-
   const { data, error } = await supabase
     .from("activity")
     .select("*")
-    .or(`sender_hash.eq.${userHash},receiver_hash.eq.${userHash}`)
+    .or(`sender_address.eq.${userAddress},receiver_address.eq.${userAddress}`)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -133,13 +121,11 @@ export async function getUserStats(userAddress: string): Promise<{
   total_received: number;
   total_claimed: number;
 }> {
-  const userHash = hashAddress(userAddress);
-
   // Get all settled activities where user is sender
   const { data: sentData, error: sentError } = await supabase
     .from("activity")
     .select("amount, type")
-    .eq("sender_hash", userHash)
+    .eq("sender_address", userAddress)
     .eq("status", "settled");
 
   if (sentError) {
@@ -150,7 +136,7 @@ export async function getUserStats(userAddress: string): Promise<{
   const { data: receivedData, error: receivedError } = await supabase
     .from("activity")
     .select("amount, type")
-    .eq("receiver_hash", userHash)
+    .eq("receiver_address", userAddress)
     .eq("status", "settled");
 
   if (receivedError) {

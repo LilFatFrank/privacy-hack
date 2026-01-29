@@ -36,7 +36,6 @@ import { TOKEN_MINTS, TokenType } from "../privacycash/tokens";
 import {
   createActivity,
   updateActivityStatus,
-  hashAddress,
 } from "../database";
 
 // Constants
@@ -102,8 +101,8 @@ export async function prepareSend(
   console.log("\n[1/5] Creating activity record...");
   const activity = await createActivity({
     type: "send",
-    sender_hash: hashAddress(senderPublicKey.toBase58()),
-    receiver_hash: hashAddress(receiverAddress),
+    sender_address: senderPublicKey.toBase58(),
+    receiver_address: receiverAddress,
     amount,
     token_address: TOKEN_MINTS[token].toBase58(),
     status: "open",

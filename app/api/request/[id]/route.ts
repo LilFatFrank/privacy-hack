@@ -32,7 +32,6 @@ export async function GET(
     }
 
     // Return public request info
-    // For requests, receiver_hash contains the actual address (not hashed)
     return NextResponse.json({
       id: activity.id,
       amount: activity.amount,
@@ -41,7 +40,7 @@ export async function GET(
       message: activity.message,
       createdAt: activity.created_at,
       // Only include receiver address for open requests (needed to fulfill)
-      receiverAddress: activity.status === "open" ? activity.receiver_hash : undefined,
+      receiverAddress: activity.status === "open" ? activity.receiver_address : undefined,
     });
   } catch (error: any) {
     console.error("Get request error:", error);

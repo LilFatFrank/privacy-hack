@@ -27,7 +27,6 @@ import { TOKEN_MINTS, TokenType } from "../privacycash/tokens";
 import {
   getActivity,
   updateActivityStatus,
-  hashAddress,
 } from "../database";
 
 // Constants
@@ -95,20 +94,18 @@ export async function prepareFulfill(
   }
 
   // Verify payer if restricted
-  if (activity.sender_hash) {
-    const payerHash = hashAddress(payerPublicKey.toBase58());
-    if (activity.sender_hash !== payerHash) {
+  if (activity.sender_address) {
+    if (activity.sender_address !== payerPublicKey.toBase58()) {
       throw new Error("Not authorized to fulfill this request");
     }
   }
 
   // Get request details
-  // For requests, receiver_hash contains the actual address (not hashed)
-  if (!activity.receiver_hash) {
+  if (!activity.receiver_address) {
     throw new Error("Request missing receiver address");
   }
 
-  const receiverAddress = activity.receiver_hash;
+  const receiverAddress = activity.receiver_address;
   const amount = activity.amount;
 
   // Determine token
@@ -294,12 +291,11 @@ export async function submitFulfill(
     throw new Error("Request already fulfilled or cancelled");
   }
 
-  // For requests, receiver_hash contains the actual address (not hashed)
-  if (!activity.receiver_hash) {
+  if (!activity.receiver_address) {
     throw new Error("Request missing receiver address");
   }
 
-  const receiverAddress = activity.receiver_hash;
+  const receiverAddress = activity.receiver_address;
   const amount = activity.amount;
   const baseUnits = Math.floor(amount * 1_000_000);
 
@@ -364,10 +360,10 @@ export async function submitFulfill(
     const withdrawTx = withdrawResult.tx;
     console.log("Withdraw tx:", withdrawTx);
 
-    // Update activity status and add sender_hash
+    // Update activity status and add sender_address
     await updateActivityStatus(activity.id, "settled", {
       tx_hash: withdrawTx,
-      sender_hash: hashAddress(payerPublicKey.toBase58()),
+      sender_address: payerPublicKey.toBase58(),
     });
 
     console.log("Activity updated: settled");
