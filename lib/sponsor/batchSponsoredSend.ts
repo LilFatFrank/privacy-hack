@@ -27,6 +27,7 @@ import { EncryptionService } from "privacycash/dist/utils/encryption.js";
 
 import { sponsoredDepositSPL } from "../privacycash/sponsoredDeposit";
 import { TOKEN_MINTS, TokenType } from "../privacycash/tokens";
+import { getCircuitBasePathCached } from "../utils/circuitPath";
 
 // Rent for 2 nullifier PDAs + SDK minimum
 const RENT_LAMPORTS = 953520 * 2;
@@ -144,13 +145,7 @@ export async function batchSponsoredSend(
   const depositResult = await sponsoredDepositSPL({
     lightWasm,
     storage,
-    keyBasePath: path.join(
-      process.cwd(),
-      "node_modules",
-      "privacycash",
-      "circuit2",
-      "transaction2"
-    ),
+    keyBasePath: getCircuitBasePathCached(),
     publicKey: userPublicKey,
     connection,
     base_units: baseUnits,
