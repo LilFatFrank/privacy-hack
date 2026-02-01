@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build --no-turbo",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test:dry": "bun tests/dry-run.test.ts",
