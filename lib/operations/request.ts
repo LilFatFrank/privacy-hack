@@ -55,7 +55,7 @@ export async function createRequest(
 
   return {
     activityId: activity.id,
-    requestLink: `${appUrl}/pay/${activity.id}`,
+    requestLink: `${appUrl}/r/${activity.id}`,
   };
 }
 
