@@ -1,12 +1,12 @@
-FROM oven/bun:1 AS base
+FROM node:20-slim AS base
 
 # Install dependencies only when needed
 FROM base AS deps
 WORKDIR /app
 
 # Install dependencies
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
+COPY package.json package-lock.json* ./
+RUN npm ci || npm install
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -16,7 +16,7 @@ COPY . .
 
 # Build the application
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN bun run build
+RUN npm run build
 
 # Production image
 FROM base AS runner
@@ -37,5 +37,5 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Run standalone server directly (not next start)
-CMD ["bun", "server.js"]
+# Run standalone server directly
+CMD ["node", "server.js"]

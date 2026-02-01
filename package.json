@@ -10,13 +10,13 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:dry": "bun tests/dry-run.test.ts",
-    "test:sol": "bun tests/sol-mainnet.test.ts",
-    "test:recover": "bun tests/sol-recover.test.ts",
-    "test:usdc": "bun tests/usdc-mainnet.test.ts",
-    "test:send": "bun test tests/prepare-submit-send.test.ts",
-    "test:fulfill": "bun test tests/prepare-submit-fulfill.test.ts",
-    "test:claim": "bun test tests/prepare-submit-claim.test.ts"
+    "test:dry": "tsx tests/dry-run.test.ts",
+    "test:sol": "tsx tests/sol-mainnet.test.ts",
+    "test:recover": "tsx tests/sol-recover.test.ts",
+    "test:usdc": "tsx tests/usdc-mainnet.test.ts",
+    "test:send": "tsx tests/prepare-submit-send.test.ts",
+    "test:fulfill": "tsx tests/prepare-submit-fulfill.test.ts",
+    "test:claim": "tsx tests/prepare-submit-claim.test.ts"
   },
   "dependencies": {
     "@solana/wallet-adapter-base": "^0.9.27",
@@ -36,7 +36,6 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/bun": "^1.3.6",
     "@types/node": "^20",
     "@types/node-localstorage": "^1.3.3",
     "@types/react": "^19",
