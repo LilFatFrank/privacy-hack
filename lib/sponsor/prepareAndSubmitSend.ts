@@ -37,6 +37,7 @@ import {
   createActivity,
   updateActivityStatus,
 } from "../database";
+import { getCircuitBasePathCached } from "../utils/circuitPath";
 
 // Constants
 const RENT_LAMPORTS = 953520 * 2;
@@ -343,7 +344,7 @@ export async function submitSend(
       encryptionService,
       publicKey: senderPublicKey,
       recipient: new PublicKey(receiverAddress),
-      keyBasePath: path.join(process.cwd(), "node_modules/privacycash/circuit2/transaction2"),
+      keyBasePath: getCircuitBasePathCached(),
       storage,
     });
 

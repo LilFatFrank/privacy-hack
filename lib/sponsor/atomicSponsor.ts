@@ -15,6 +15,7 @@ import {
   sponsoredDepositSPL,
   sponsoredDepositSOL,
 } from "../privacycash/sponsoredDeposit";
+import { getCircuitBasePathCached } from "../utils/circuitPath";
 
 const storage = new LocalStorage(path.join(process.cwd(), "cache"));
 
@@ -92,13 +93,7 @@ export async function atomicSponsoredDeposit(
   const result = await sponsoredDepositSPL({
     lightWasm,
     storage,
-    keyBasePath: path.join(
-      process.cwd(),
-      "node_modules",
-      "privacycash",
-      "circuit2",
-      "transaction2"
-    ),
+    keyBasePath: getCircuitBasePathCached(),
     publicKey: userKeypair.publicKey,
     connection,
     base_units: baseUnits,
@@ -142,13 +137,7 @@ export async function atomicSponsoredSolDeposit(params: {
   const result = await sponsoredDepositSOL({
     lightWasm,
     storage,
-    keyBasePath: path.join(
-      process.cwd(),
-      "node_modules",
-      "privacycash",
-      "circuit2",
-      "transaction2"
-    ),
+    keyBasePath: getCircuitBasePathCached(),
     publicKey: userKeypair.publicKey,
     connection,
     amount_in_lamports: lamports,

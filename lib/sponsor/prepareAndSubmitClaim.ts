@@ -58,6 +58,7 @@ import {
   deserializeKeypair,
   PassphraseEncryptedPayload,
 } from "../crypto";
+import { getCircuitBasePathCached } from "../utils/circuitPath";
 
 // Constants
 const RENT_LAMPORTS = 953520 * 2;
@@ -405,7 +406,7 @@ export async function submitClaim(
       encryptionService,
       publicKey: senderPublicKey,
       recipient: burnerAddress, // Withdraw to burner, not receiver
-      keyBasePath: path.join(process.cwd(), "node_modules/privacycash/circuit2/transaction2"),
+      keyBasePath: getCircuitBasePathCached(),
       storage,
     });
 

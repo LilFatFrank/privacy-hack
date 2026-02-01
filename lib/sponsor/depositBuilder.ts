@@ -60,6 +60,7 @@ import {
 import { getUtxosSPL } from "privacycash/dist/getUtxosSPL.js";
 
 import { TOKEN_MINTS, TokenType } from "../privacycash/tokens";
+import { getCircuitBasePathCached } from "../utils/circuitPath";
 
 export interface BuildDepositParams {
   connection: Connection;
@@ -281,13 +282,7 @@ export async function buildDepositSPLTransaction(
 
   // Generate ZK proof
   logger.info("generating ZK proof...");
-  const keyBasePath = path.join(
-    process.cwd(),
-    "node_modules",
-    "privacycash",
-    "circuit2",
-    "transaction2"
-  );
+  const keyBasePath = getCircuitBasePathCached();
   const { proof, publicSignals } = await prove(input, keyBasePath);
   const proofInBytes = parseProofToBytesArray(proof);
   const inputsInBytes = parseToBytesArray(publicSignals);
