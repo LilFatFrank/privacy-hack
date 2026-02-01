@@ -1,19 +1,33 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PrivyProvider } from "@privy-io/react-auth";
 import { toSolanaWalletConnectors } from "@privy-io/react-auth/solana";
 
-// Use placeholder during build if env var not set - Privy won't actually connect
-// but hooks will have context and won't throw
-const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID || "placeholder-build-id";
-
 export default function Providers({ children }: { children: React.ReactNode }) {
-  // Only create Solana connectors on client side to avoid SSR issues
-  const solanaConnectors = useMemo(() => {
-    if (typeof window === "undefined") return undefined;
-    return toSolanaWalletConnectors({ shouldAutoConnect: true });
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
   }, []);
+
+  // Only create Solana connectors on client side
+  const solanaConnectors = useMemo(() => {
+    if (!mounted) return undefined;
+    return toSolanaWalletConnectors({ shouldAutoConnect: true });
+  }, [mounted]);
+
+  // During SSR/build, render children without Privy
+  // This avoids Privy's app ID validation during static generation
+  if (!mounted) {
+    return <>{children}</>;
+  }
+
+  const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+  if (!privyAppId) {
+    console.warn("NEXT_PUBLIC_PRIVY_APP_ID not set");
+    return <>{children}</>;
+  }
 
   return (
     <PrivyProvider
