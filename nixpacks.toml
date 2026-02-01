@@ -1,0 +1,8 @@
+[phases.install]
+cmds = ["bun install --ignore-scripts"]
+
+[phases.build]
+cmds = ["bun run build"]
+
+[start]
+cmd = "bun run start"
