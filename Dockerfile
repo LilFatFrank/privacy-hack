@@ -1,4 +1,4 @@
-FROM node:20-slim AS base
+FROM node:22-slim AS base
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -16,6 +16,8 @@ COPY . .
 
 # Build the application
 ENV NEXT_TELEMETRY_DISABLED=1
+# Debug: verify privacycash is installed
+RUN ls -la node_modules/privacycash/dist/ | head -10
 RUN npm run build
 
 # Production image
