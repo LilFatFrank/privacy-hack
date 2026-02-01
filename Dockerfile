@@ -1,11 +1,14 @@
-FROM node:22-slim AS base
+FROM node:20-slim AS base
 
 # Install dependencies only when needed
 FROM base AS deps
 WORKDIR /app
 
-# Install dependencies
+# Copy package files and postinstall script
 COPY package.json package-lock.json* ./
+COPY scripts ./scripts
+
+# Install dependencies (postinstall patches privacycash)
 RUN npm ci || npm install
 
 # Rebuild the source code only when needed
@@ -16,8 +19,6 @@ COPY . .
 
 # Build the application
 ENV NEXT_TELEMETRY_DISABLED=1
-# Debug: verify privacycash is installed
-RUN ls -la node_modules/privacycash/dist/ | head -10
 RUN npm run build
 
 # Production image
