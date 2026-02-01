@@ -70,6 +70,7 @@ export interface BuildDepositParams {
   baseUnits: number;
   token: TokenType;
   storage: Storage;
+  sponsorPublicKey?: PublicKey; // If provided, sponsor pays fees instead of user
 }
 
 export interface BuildDepositResult {
@@ -85,7 +86,7 @@ export interface BuildDepositResult {
 export async function buildDepositSPLTransaction(
   params: BuildDepositParams
 ): Promise<BuildDepositResult> {
-  const { connection, userKeypair, userPublicKey: providedPublicKey, sessionSignature, baseUnits, token, storage } = params;
+  const { connection, userKeypair, userPublicKey: providedPublicKey, sessionSignature, baseUnits, token, storage, sponsorPublicKey } = params;
 
   // Support both keypair mode (legacy) and session signature mode (new)
   if (!userKeypair && !sessionSignature) {
@@ -350,8 +351,11 @@ export async function buildDepositSPLTransaction(
   // Build transaction - use "confirmed" for fresher blockhash
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
 
+  // Use sponsor as fee payer if provided, otherwise user pays
+  const feePayerKey = sponsorPublicKey ?? userPublicKey;
+
   const messageV0 = new TransactionMessage({
-    payerKey: userPublicKey,
+    payerKey: feePayerKey,
     recentBlockhash: blockhash,
     instructions: [modifyComputeUnits, depositInstruction],
   }).compileToV0Message([lookupTableAccount.value]);

@@ -35,7 +35,8 @@ export async function GET(
       status: activity.status,
       message: activity.message,
       createdAt: activity.created_at,
-      // Don't expose sender_address, burner_address, or encrypted data
+      senderAddress: activity.sender_address,
+      // Don't expose burner_address, or encrypted data
     });
   } catch (error: any) {
     console.error("Get claim link error:", error);

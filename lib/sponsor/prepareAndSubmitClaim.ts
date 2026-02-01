@@ -21,8 +21,6 @@ import {
   Connection,
   Keypair,
   PublicKey,
-  Transaction,
-  SystemProgram,
   VersionedTransaction,
   TransactionMessage,
 } from "@solana/web3.js";
@@ -60,13 +58,11 @@ import {
 } from "../crypto";
 import { getCircuitBasePathCached } from "../utils/circuitPath";
 
-// Constants
-const RENT_LAMPORTS = 953520 * 2;
-const SDK_MINIMUM = 2_000_000;
-const TOTAL_PREFUND = RENT_LAMPORTS + SDK_MINIMUM;
-
 // Storage for UTXO cache
 const storage = new LocalStorage(path.join(process.cwd(), "cache"));
+
+// Base fee per signature in Solana
+const BASE_FEE_LAMPORTS = 5000;
 
 // ============================================================================
 // PREPARE PHASE - Build unsigned transactions for sender to sign
@@ -75,7 +71,6 @@ const storage = new LocalStorage(path.join(process.cwd(), "cache"));
 export interface PrepareClaimParams {
   connection: Connection;
   senderPublicKey: PublicKey;
-  sponsorKeypair: Keypair;
   sessionSignature: Uint8Array;
   amount: number;
   token: TokenType;
@@ -85,16 +80,16 @@ export interface PrepareClaimParams {
 export interface PrepareClaimResult {
   activityId: string;
   unsignedDepositTx: string;
-  unsignedSweepTx: string;
-  fundTx: string | null;
-  sweepAmount: number;
   lastValidBlockHeight: number;
   passphrase: string; // Return passphrase immediately so user can share it
   burnerAddress: string;
+  estimatedFeeLamports: number;
+  estimatedFeeSOL: number;
 }
 
 /**
  * Prepare claim link transactions for sender to sign.
+ * User pays their own gas fees.
  */
 export async function prepareClaim(
   params: PrepareClaimParams
@@ -102,7 +97,6 @@ export async function prepareClaim(
   const {
     connection,
     senderPublicKey,
-    sponsorKeypair,
     sessionSignature,
     amount,
     token,
@@ -131,7 +125,7 @@ export async function prepareClaim(
   const encryptedForSender = encryptWithSessionSignature(burnerSecretKey, sessionSignature);
 
   // Create activity record with encrypted keys
-  console.log("\n[1/5] Creating activity record...");
+  console.log("\n[1/3] Creating activity record...");
   const activity = await createActivity({
     type: "send_claim",
     sender_address: senderPublicKey.toBase58(),
@@ -147,31 +141,10 @@ export async function prepareClaim(
   });
   console.log("Activity created:", activity.id);
 
-  // Step 2: Pre-fund sender with SOL
-  console.log("\n[2/5] Pre-funding sender with SOL...");
-  const senderBalance = await connection.getBalance(senderPublicKey);
+  // Step 2: Build deposit transaction (unsigned)
+  console.log("\n[2/3] Building deposit transaction...");
 
-  let fundTx: string | null = null;
-  if (senderBalance < TOTAL_PREFUND) {
-    const needed = TOTAL_PREFUND - senderBalance;
-    const fundTransaction = new Transaction().add(
-      SystemProgram.transfer({
-        fromPubkey: sponsorKeypair.publicKey,
-        toPubkey: senderPublicKey,
-        lamports: needed,
-      })
-    );
-    fundTx = await connection.sendTransaction(fundTransaction, [sponsorKeypair]);
-    await connection.confirmTransaction(fundTx, "confirmed");
-    console.log("Fund tx:", fundTx);
-  } else {
-    console.log("Sender already has enough SOL");
-  }
-
-  // Step 3: Build deposit transaction (unsigned)
-  console.log("\n[3/5] Building deposit transaction...");
-
-  const { transaction: depositTx, lastValidBlockHeight: depositLastValidBlockHeight } =
+  const { transaction: depositTx, lastValidBlockHeight } =
     await buildDepositSPLTransaction({
       connection,
       userPublicKey: senderPublicKey,
@@ -183,63 +156,35 @@ export async function prepareClaim(
 
   console.log("Deposit tx built (unsigned)");
 
-  // Step 4: Simulate deposit to get post-balance
-  console.log("\n[4/5] Simulating deposit to get exact remaining...");
+  // Step 3: Estimate network fee
+  console.log("\n[3/3] Estimating network fee...");
 
-  const simulation = await connection.simulateTransaction(depositTx, {
-    sigVerify: false,
-    replaceRecentBlockhash: true,
-  });
+  const feeCalculator = await connection.getFeeForMessage(depositTx.message, "confirmed");
+  const estimatedFeeLamports = feeCalculator.value ?? BASE_FEE_LAMPORTS;
+  const estimatedFeeSOL = estimatedFeeLamports / 1_000_000_000;
 
-  if (simulation.value.err) {
+  console.log("Estimated fee:", estimatedFeeLamports, "lamports (", estimatedFeeSOL, "SOL)");
+
+  // Check if user has enough SOL for fees
+  const userBalance = await connection.getBalance(senderPublicKey);
+  console.log("Sender SOL balance:", userBalance, "lamports");
+
+  if (userBalance < estimatedFeeLamports) {
     await updateActivityStatus(activity.id, "cancelled");
-    throw new Error(`Simulation failed: ${JSON.stringify(simulation.value.err)}`);
+    throw new Error(`Insufficient SOL for network fees. Need ${estimatedFeeLamports} lamports (~${estimatedFeeSOL.toFixed(6)} SOL), have ${userBalance} lamports`);
   }
 
-  const postBalance = simulation.value.accounts?.[0]?.lamports;
-  const currentBalance = await connection.getBalance(senderPublicKey);
-  const exactRemaining = postBalance ?? (currentBalance - RENT_LAMPORTS - 5000);
-
-  console.log("Exact remaining after deposit:", exactRemaining, "lamports");
-
-  // Step 5: Build sweep transaction
-  console.log("\n[5/5] Building sweep transaction...");
-
-  const { blockhash: sweepBlockhash, lastValidBlockHeight: sweepLastValidBlockHeight } =
-    await connection.getLatestBlockhash("confirmed");
-
-  const sweepMessage = new TransactionMessage({
-    payerKey: sponsorKeypair.publicKey,
-    recentBlockhash: sweepBlockhash,
-    instructions: [
-      SystemProgram.transfer({
-        fromPubkey: senderPublicKey,
-        toPubkey: sponsorKeypair.publicKey,
-        lamports: exactRemaining,
-      }),
-    ],
-  }).compileToV0Message();
-
-  const sweepTx = new VersionedTransaction(sweepMessage);
-  sweepTx.sign([sponsorKeypair]);
-
-  console.log("Sweep amount:", exactRemaining, "lamports");
-
-  // Serialize transactions
+  // Serialize transaction
   const unsignedDepositTx = Buffer.from(depositTx.serialize()).toString("base64");
-  const unsignedSweepTx = Buffer.from(sweepTx.serialize()).toString("base64");
-
-  const lastValidBlockHeight = Math.min(depositLastValidBlockHeight, sweepLastValidBlockHeight);
 
   return {
     activityId: activity.id,
     unsignedDepositTx,
-    unsignedSweepTx,
-    fundTx,
-    sweepAmount: exactRemaining,
     lastValidBlockHeight,
     passphrase, // User shares this with receiver out-of-band
     burnerAddress: burnerKeypair.publicKey.toBase58(),
+    estimatedFeeLamports,
+    estimatedFeeSOL,
   };
 }
 
@@ -250,7 +195,6 @@ export async function prepareClaim(
 export interface SubmitClaimParams {
   connection: Connection;
   signedDepositTx: string;
-  signedSweepTx: string;
   sessionSignature: Uint8Array;
   activityId: string;
   senderPublicKey: PublicKey;
@@ -260,11 +204,9 @@ export interface SubmitClaimParams {
 export interface SubmitClaimResult {
   activityId: string;
   depositTx: string;
-  sweepTx: string;
   withdrawTx: string; // Withdraw to burner (breaks the link)
   claimLink: string;
   burnerAddress: string;
-  finalBalance: number;
 }
 
 /**
@@ -297,6 +239,7 @@ async function relayDepositToIndexer(
 /**
  * Submit signed transactions and complete claim link creation.
  * Deposits to PrivacyCash, then withdraws to burner wallet (breaking the link).
+ * User pays their own gas fees.
  */
 export async function submitClaim(
   params: SubmitClaimParams
@@ -304,7 +247,6 @@ export async function submitClaim(
   const {
     connection,
     signedDepositTx,
-    signedSweepTx,
     sessionSignature,
     activityId,
     senderPublicKey,
@@ -363,7 +305,7 @@ export async function submitClaim(
 
   try {
     // Step 1: Submit deposit to relayer
-    console.log("\n[1/4] Submitting deposit to relayer...");
+    console.log("\n[1/3] Submitting deposit to relayer...");
 
     const depositSig = await relayDepositToIndexer(
       signedDepositTx,
@@ -372,25 +314,12 @@ export async function submitClaim(
     );
     console.log("Deposit tx:", depositSig);
 
-    // Step 2: Submit sweep to network
-    console.log("\n[2/4] Submitting sweep to network...");
-
-    const sweepTxBytes = Buffer.from(signedSweepTx, "base64");
-    const sweepTransaction = VersionedTransaction.deserialize(sweepTxBytes);
-
-    const sweepSig = await connection.sendRawTransaction(sweepTransaction.serialize());
-    await connection.confirmTransaction(sweepSig, "confirmed");
-    console.log("Sweep tx:", sweepSig);
-
-    const finalBalance = await connection.getBalance(senderPublicKey);
-    console.log("Final sender balance:", finalBalance, "lamports");
-
-    // Step 3: Wait for indexer
-    console.log("\n[3/4] Waiting for indexer (15s)...");
+    // Step 2: Wait for indexer
+    console.log("\n[2/3] Waiting for indexer (15s)...");
     await new Promise((r) => setTimeout(r, 15000));
 
-    // Step 4: Withdraw to burner wallet (this breaks the link!)
-    console.log("\n[4/4] Withdrawing to burner wallet...");
+    // Step 3: Withdraw to burner wallet (this breaks the link!)
+    console.log("\n[3/3] Withdrawing to burner wallet...");
 
     // Derive encryption keys from session signature
     const encryptionService = new EncryptionService();
@@ -427,16 +356,14 @@ export async function submitClaim(
 
     // Build claim link URL
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const claimLink = `${appUrl}/claim/${activityId}`;
+    const claimLink = `${appUrl}/c/${activityId}`;
 
     return {
       activityId,
       depositTx: depositSig,
-      sweepTx: sweepSig,
       withdrawTx,
       claimLink,
       burnerAddress: burnerAddress.toBase58(),
-      finalBalance,
     };
   } catch (error) {
     console.error("Submit claim failed:", error);

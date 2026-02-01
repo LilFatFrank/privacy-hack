@@ -28,7 +28,6 @@ export async function POST(request: NextRequest) {
 
     const {
       signedDepositTx,
-      signedSweepTx,
       activityId,
       senderPublicKey,
       receiverAddress,
@@ -37,7 +36,6 @@ export async function POST(request: NextRequest) {
       lastValidBlockHeight,
     }: {
       signedDepositTx: string;
-      signedSweepTx: string;
       activityId: string;
       senderPublicKey: string;
       receiverAddress: string;
@@ -47,7 +45,7 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Validation
-    if (!signedDepositTx || !signedSweepTx || !activityId || !senderPublicKey || !receiverAddress || !amount || !token) {
+    if (!signedDepositTx || !activityId || !senderPublicKey || !receiverAddress || !amount || !token) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
@@ -82,11 +80,10 @@ export async function POST(request: NextRequest) {
     }
     const connection = new Connection(rpcUrl, "confirmed");
 
-    // Execute submit
+    // Execute submit - user already signed and paid their own gas
     const result = await submitSend({
       connection,
       signedDepositTx,
-      signedSweepTx,
       sessionSignature: sessionSigBytes,
       activityId,
       senderPublicKey: senderPubKey,

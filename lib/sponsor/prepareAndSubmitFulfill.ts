@@ -1,19 +1,22 @@
 /**
  * Prepare and Submit Fulfill - Split flow for request fulfillment
  *
- * Similar to send flow, but:
- * - Gets receiver address and amount from existing activity
- * - Updates existing activity instead of creating new one
+ * Prepare phase:
+ * 1. Build unsigned deposit tx (using session signature for encryption)
+ * 2. Estimate network fees
+ * 3. Return unsigned tx for user to sign
+ *
+ * Submit phase:
+ * 1. Receive signed deposit tx
+ * 2. Submit deposit to relayer
+ * 3. Wait for indexer, withdraw to receiver (requester)
+ *
+ * Note: User pays their own gas fees (no sponsor funding/sweep)
  */
 
 import {
   Connection,
-  Keypair,
   PublicKey,
-  Transaction,
-  SystemProgram,
-  VersionedTransaction,
-  TransactionMessage,
 } from "@solana/web3.js";
 import * as path from "path";
 import { LocalStorage } from "node-localstorage";
@@ -30,10 +33,8 @@ import {
 } from "../database";
 import { getCircuitBasePathCached } from "../utils/circuitPath";
 
-// Constants
-const RENT_LAMPORTS = 953520 * 2;
-const SDK_MINIMUM = 2_000_000;
-const TOTAL_PREFUND = RENT_LAMPORTS + SDK_MINIMUM;
+// Base fee per signature in Solana
+const BASE_FEE_LAMPORTS = 5000;
 
 // Storage for UTXO cache
 const storage = new LocalStorage(path.join(process.cwd(), "cache"));
@@ -46,17 +47,15 @@ export interface PrepareFulfillParams {
   connection: Connection;
   activityId: string;
   payerPublicKey: PublicKey;
-  sponsorKeypair: Keypair;
   sessionSignature: Uint8Array;
 }
 
 export interface PrepareFulfillResult {
   activityId: string;
   unsignedDepositTx: string;
-  unsignedSweepTx: string;
-  fundTx: string | null;
-  sweepAmount: number;
-  lastValidBlockHeight: number; // For checking if tx is still valid
+  lastValidBlockHeight: number;
+  estimatedFeeLamports: number;
+  estimatedFeeSOL: number;
   // Request details for UI confirmation
   amount: number;
   token: TokenType;
@@ -64,7 +63,8 @@ export interface PrepareFulfillResult {
 }
 
 /**
- * Prepare fulfill transactions for user to sign.
+ * Prepare fulfill transaction for user to sign.
+ * User pays their own gas fees.
  */
 export async function prepareFulfill(
   params: PrepareFulfillParams
@@ -73,7 +73,6 @@ export async function prepareFulfill(
     connection,
     activityId,
     payerPublicKey,
-    sponsorKeypair,
     sessionSignature,
   } = params;
 
@@ -123,31 +122,10 @@ export async function prepareFulfill(
   console.log("Receiver:", receiverAddress);
   console.log("Amount:", amount, token);
 
-  // Step 1: Pre-fund payer with SOL
-  console.log("\n[1/4] Pre-funding payer with SOL...");
-  const payerBalance = await connection.getBalance(payerPublicKey);
+  // Step 1: Build deposit transaction
+  console.log("\n[1/2] Building deposit transaction...");
 
-  let fundTx: string | null = null;
-  if (payerBalance < TOTAL_PREFUND) {
-    const needed = TOTAL_PREFUND - payerBalance;
-    const fundTransaction = new Transaction().add(
-      SystemProgram.transfer({
-        fromPubkey: sponsorKeypair.publicKey,
-        toPubkey: payerPublicKey,
-        lamports: needed,
-      })
-    );
-    fundTx = await connection.sendTransaction(fundTransaction, [sponsorKeypair]);
-    await connection.confirmTransaction(fundTx, "confirmed");
-    console.log("Fund tx:", fundTx);
-  } else {
-    console.log("Payer already has enough SOL");
-  }
-
-  // Step 2: Build deposit transaction
-  console.log("\n[2/4] Building deposit transaction...");
-
-  const { transaction: depositTx, mintAddress, lastValidBlockHeight: depositLastValidBlockHeight } = await buildDepositSPLTransaction({
+  const { transaction: depositTx, lastValidBlockHeight } = await buildDepositSPLTransaction({
     connection,
     userPublicKey: payerPublicKey,
     sessionSignature,
@@ -158,60 +136,32 @@ export async function prepareFulfill(
 
   console.log("Deposit tx built (unsigned)");
 
-  // Step 3: Simulate deposit to get post-balance
-  console.log("\n[3/4] Simulating deposit...");
+  // Step 2: Estimate network fee
+  console.log("\n[2/2] Estimating network fee...");
 
-  const simulation = await connection.simulateTransaction(depositTx, {
-    sigVerify: false,
-    replaceRecentBlockhash: true,
-  });
+  const feeCalculator = await connection.getFeeForMessage(depositTx.message, "confirmed");
+  const estimatedFeeLamports = feeCalculator.value ?? BASE_FEE_LAMPORTS;
+  const estimatedFeeSOL = estimatedFeeLamports / 1_000_000_000;
 
-  if (simulation.value.err) {
-    throw new Error(`Simulation failed: ${JSON.stringify(simulation.value.err)}`);
+  console.log("Estimated fee:", estimatedFeeLamports, "lamports (", estimatedFeeSOL, "SOL)");
+
+  // Check if user has enough SOL for fees
+  const userBalance = await connection.getBalance(payerPublicKey);
+  console.log("Payer SOL balance:", userBalance, "lamports");
+
+  if (userBalance < estimatedFeeLamports) {
+    throw new Error(`Insufficient SOL for network fees. Need ${estimatedFeeLamports} lamports (~${estimatedFeeSOL.toFixed(6)} SOL), have ${userBalance} lamports`);
   }
 
-  const postBalance = simulation.value.accounts?.[0]?.lamports;
-  const currentBalance = await connection.getBalance(payerPublicKey);
-  const exactRemaining = postBalance ?? (currentBalance - RENT_LAMPORTS - 5000);
-
-  console.log("Exact remaining after deposit:", exactRemaining, "lamports");
-
-  // Step 4: Build sweep transaction
-  console.log("\n[4/4] Building sweep transaction...");
-
-  const { blockhash: sweepBlockhash, lastValidBlockHeight: sweepLastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-
-  const sweepMessage = new TransactionMessage({
-    payerKey: sponsorKeypair.publicKey,
-    recentBlockhash: sweepBlockhash,
-    instructions: [
-      SystemProgram.transfer({
-        fromPubkey: payerPublicKey,
-        toPubkey: sponsorKeypair.publicKey,
-        lamports: exactRemaining,
-      }),
-    ],
-  }).compileToV0Message();
-
-  const sweepTx = new VersionedTransaction(sweepMessage);
-  sweepTx.sign([sponsorKeypair]);
-
-  console.log("Sweep amount:", exactRemaining, "lamports");
-
-  // Serialize transactions
+  // Serialize transaction for frontend
   const unsignedDepositTx = Buffer.from(depositTx.serialize()).toString("base64");
-  const unsignedSweepTx = Buffer.from(sweepTx.serialize()).toString("base64");
-
-  // Use the earlier expiration to be safe
-  const lastValidBlockHeight = Math.min(depositLastValidBlockHeight, sweepLastValidBlockHeight);
 
   return {
     activityId,
     unsignedDepositTx,
-    unsignedSweepTx,
-    fundTx,
-    sweepAmount: exactRemaining,
     lastValidBlockHeight,
+    estimatedFeeLamports,
+    estimatedFeeSOL,
     amount,
     token,
     receiverAddress,
@@ -225,21 +175,16 @@ export async function prepareFulfill(
 export interface SubmitFulfillParams {
   connection: Connection;
   signedDepositTx: string;
-  signedSweepTx: string;
   sessionSignature: Uint8Array;
   activityId: string;
   payerPublicKey: PublicKey;
-  lastValidBlockHeight?: number; // Optional: for checking tx validity
+  lastValidBlockHeight?: number;
 }
 
 export interface SubmitFulfillResult {
   activityId: string;
   depositTx: string;
-  sweepTx: string;
   withdrawTx: string;
-  finalBalance: number;
-  amountReceived: number;
-  feesPaid: number;
 }
 
 /**
@@ -270,7 +215,7 @@ async function relayDepositToIndexer(
 }
 
 /**
- * Submit signed transactions and complete the fulfill flow.
+ * Submit signed deposit transaction and complete the fulfill flow.
  */
 export async function submitFulfill(
   params: SubmitFulfillParams
@@ -278,7 +223,6 @@ export async function submitFulfill(
   const {
     connection,
     signedDepositTx,
-    signedSweepTx,
     sessionSignature,
     activityId,
     payerPublicKey,
@@ -328,7 +272,7 @@ export async function submitFulfill(
 
   try {
     // Step 1: Submit deposit to relayer
-    console.log("\n[1/4] Submitting deposit to relayer...");
+    console.log("\n[1/3] Submitting deposit to relayer...");
 
     const depositSig = await relayDepositToIndexer(
       signedDepositTx,
@@ -337,25 +281,12 @@ export async function submitFulfill(
     );
     console.log("Deposit tx:", depositSig);
 
-    // Step 2: Submit sweep to network
-    console.log("\n[2/4] Submitting sweep to network...");
-
-    const sweepTxBytes = Buffer.from(signedSweepTx, "base64");
-    const sweepTransaction = VersionedTransaction.deserialize(sweepTxBytes);
-
-    const sweepSig = await connection.sendRawTransaction(sweepTransaction.serialize());
-    await connection.confirmTransaction(sweepSig, "confirmed");
-    console.log("Sweep tx:", sweepSig);
-
-    const finalBalance = await connection.getBalance(payerPublicKey);
-    console.log("Final balance:", finalBalance, "lamports");
-
-    // Step 3: Wait for indexer
-    console.log("\n[3/4] Waiting for indexer (15s)...");
+    // Step 2: Wait for indexer
+    console.log("\n[2/3] Waiting for indexer (15s)...");
     await new Promise((r) => setTimeout(r, 15000));
 
-    // Step 4: Withdraw to receiver (requester)
-    console.log("\n[4/4] Withdrawing to receiver...");
+    // Step 3: Withdraw to receiver (requester)
+    console.log("\n[3/3] Withdrawing to receiver...");
 
     const encryptionService = new EncryptionService();
     encryptionService.deriveEncryptionKeyFromSignature(sessionSignature);
@@ -388,11 +319,7 @@ export async function submitFulfill(
     return {
       activityId,
       depositTx: depositSig,
-      sweepTx: sweepSig,
       withdrawTx,
-      finalBalance,
-      amountReceived: withdrawResult.base_units / 1_000_000,
-      feesPaid: withdrawResult.fee_base_units / 1_000_000,
     };
   } catch (error) {
     console.error("Submit fulfill failed:", error);

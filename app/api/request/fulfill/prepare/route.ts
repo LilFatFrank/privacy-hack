@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Connection, Keypair, PublicKey } from "@solana/web3.js";
-import bs58 from "bs58";
+import { Connection, PublicKey } from "@solana/web3.js";
 import nacl from "tweetnacl";
 
 import { prepareFulfill } from "@/lib/sponsor/prepareAndSubmitFulfill";
@@ -61,16 +60,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get sponsor keypair
-    const sponsorKey = process.env.SPONSOR_PRIVATE_KEY;
-    if (!sponsorKey) {
-      return NextResponse.json(
-        { error: "SPONSOR_PRIVATE_KEY not configured" },
-        { status: 500 }
-      );
-    }
-    const sponsorKeypair = Keypair.fromSecretKey(bs58.decode(sponsorKey));
-
     // Get connection
     const rpcUrl = process.env.RPC_URL;
     if (!rpcUrl) {
@@ -81,12 +70,11 @@ export async function POST(request: NextRequest) {
     }
     const connection = new Connection(rpcUrl, "confirmed");
 
-    // Execute prepare
+    // Execute prepare - user pays their own gas fees
     const result = await prepareFulfill({
       connection,
       activityId,
       payerPublicKey: payerPubKey,
-      sponsorKeypair,
       sessionSignature: sessionSigBytes,
     });
 
