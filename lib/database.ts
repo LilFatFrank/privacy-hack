@@ -29,11 +29,19 @@ export interface Activity {
   claim_tx_hash?: string | null;
 }
 
-// Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+// Supabase client (lazy-loaded to avoid build-time errors)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let supabase: any = null;
+
+function getSupabase() {
+  if (!supabase) {
+    supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+  }
+  return supabase;
+}
 
 // Create activity
 export async function createActivity(
@@ -54,7 +62,7 @@ export async function createActivity(
     Object.entries(record).filter(([_, v]) => v !== undefined)
   );
 
-  const { error } = await supabase.from("activity").insert([cleanRecord]);
+  const { error } = await getSupabase().from("activity").insert([cleanRecord]);
 
   if (error) {
     throw new Error(`Failed to create activity: ${error.message}`);
@@ -65,7 +73,7 @@ export async function createActivity(
 
 // Get activity by ID
 export async function getActivity(id: string): Promise<Activity | null> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from("activity")
     .select("*")
     .eq("id", id)
@@ -87,7 +95,7 @@ export async function updateActivityStatus(
   status: ActivityStatus,
   updates?: Partial<Pick<Activity, "tx_hash" | "claim_tx_hash" | "receiver_address" | "sender_address">>
 ): Promise<void> {
-  const { error } = await supabase
+  const { error } = await getSupabase()
     .from("activity")
     .update({
       status,
@@ -105,7 +113,7 @@ export async function updateActivityStatus(
 export async function getActivitiesForUser(
   userAddress: string
 ): Promise<Activity[]> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from("activity")
     .select("*")
     .or(`sender_address.eq.${userAddress},receiver_address.eq.${userAddress}`)
@@ -147,16 +155,16 @@ export async function getUserStats(userAddress: string): Promise<{
   }
 
   const total_sent = (sentData || [])
-    .filter((a) => a.type === "send")
-    .reduce((sum, a) => sum + a.amount, 0);
+    .filter((a: Activity) => a.type === "send")
+    .reduce((sum: number, a: Activity) => sum + a.amount, 0);
 
   const total_received = (receivedData || [])
-    .filter((a) => a.type === "send" || a.type === "request")
-    .reduce((sum, a) => sum + a.amount, 0);
+    .filter((a: Activity) => a.type === "send" || a.type === "request")
+    .reduce((sum: number, a: Activity) => sum + a.amount, 0);
 
   const total_claimed = (receivedData || [])
-    .filter((a) => a.type === "send_claim")
-    .reduce((sum, a) => sum + a.amount, 0);
+    .filter((a: Activity) => a.type === "send_claim")
+    .reduce((sum: number, a: Activity) => sum + a.amount, 0);
 
   return { total_sent, total_received, total_claimed };
 }
