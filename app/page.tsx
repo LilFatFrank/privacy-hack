@@ -1,7 +1,7 @@
 "use client";
 
 import { usePrivy } from "@privy-io/react-auth";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { motion } from "motion/react";
 import { useSessionSignature } from "@/hooks/useSessionSignature";
 import { useUSDCBalance } from "@/hooks/useUSDCBalance";
@@ -68,12 +68,12 @@ export default function Home() {
     setActiveModal(null);
   };
 
-  const getBalanceDisplay = () => {
+  const getBalanceDisplay = useCallback(() => {
     if (!authenticated) return "Connect Wallet";
-    if (balanceLoading) return "Loading...";
+    if (balanceLoading || !walletAddress) return "Loading...";
     if (balance !== null) return `${formatNumber(balance)} USDC`;
-    return "Connect Wallet";
-  };
+    return "0 USDC";
+  }, [authenticated, balanceLoading, balance, walletAddress]);
 
   return (
     <>
