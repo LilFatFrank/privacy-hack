@@ -7,10 +7,17 @@ const solanaConnectors = toSolanaWalletConnectors({
   shouldAutoConnect: true,
 });
 
+const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+
 export default function Providers({ children }: { children: React.ReactNode }) {
+  // During build/prerender, return children without Privy if no app ID
+  if (!privyAppId) {
+    return <>{children}</>;
+  }
+
   return (
     <PrivyProvider
-      appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID!}
+      appId={privyAppId}
       config={{
         appearance: {
           accentColor: "#6A6FF5",
