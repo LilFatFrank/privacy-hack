@@ -35,7 +35,7 @@ export function ClaimPassphraseModal({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const partnerFee = BASE_FEE + amount * FEE_PERCENT;
-  const total = amount + partnerFee;
+  const total = amount - partnerFee;
 
   const handleProceed = async () => {
     if (!passphrase.trim()) return;
@@ -84,8 +84,8 @@ export function ClaimPassphraseModal({
     <Modal isOpen={isOpen} onClose={handleClose}>
       {/* Header */}
       <div className="flex items-center gap-2 mb-6">
-        <Image src="/assets/send.svg" alt="Claim" width={24} height={24} className="invert" />
-        <h2 className="text-2xl font-semibold text-[#121212]">Send via Claim</h2>
+        <Image src="/assets/receive.svg" alt="Claim" width={24} height={24} className="invert" />
+        <h2 className="text-2xl font-semibold text-[#121212]">Claim</h2>
       </div>
 
       <AnimatePresence mode="wait">
@@ -118,11 +118,11 @@ export function ClaimPassphraseModal({
               </div>
               <div className="flex justify-between">
                 <span className="text-[#121212]">Partner Fees</span>
-                <span className="text-[#121212]">{formatNumber(partnerFee)} USDC</span>
+                <span className="text-[#121212]">~{formatNumber(partnerFee)} USDC</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#121212] font-semibold">Total</span>
-                <span className="text-[#121212] font-semibold">{formatNumber(total)} USDC</span>
+                <span className="text-[#121212] font-semibold">~{formatNumber(total)} USDC</span>
               </div>
             </div>
 
@@ -166,11 +166,11 @@ export function ClaimPassphraseModal({
               </div>
               <div className="flex justify-between">
                 <span className="text-[#121212]">Partner Fees</span>
-                <span className="text-[#121212]">{formatNumber(partnerFee)} USDC</span>
+                <span className="text-[#121212]">~{formatNumber(partnerFee)} USDC</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#121212] font-semibold">Total</span>
-                <span className="text-[#121212] font-semibold">{formatNumber(total)} USDC</span>
+                <span className="text-[#121212] font-semibold">~{formatNumber(total)} USDC</span>
               </div>
             </div>
 

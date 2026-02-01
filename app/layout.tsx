@@ -12,9 +12,20 @@ const jost = Jost({
 
 export const metadata: Metadata = {
   title: "Swish",
-  description: "Venmo but private",
+  description: "Venmo, but private",
   icons: {
     icon: "/assets/logo.svg",
+  },
+  openGraph: {
+    title: "Swish",
+    description: "Venmo, but private",
+    images: ["/assets/open-graph-main.png"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Swish",
+    description: "Venmo, but private",
+    images: ["/assets/open-graph-main.png"],
   },
 };
 

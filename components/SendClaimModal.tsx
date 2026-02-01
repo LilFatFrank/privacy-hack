@@ -6,14 +6,17 @@ import Image from "next/image";
 import { Modal } from "./Modal";
 import { Spinner } from "./Spinner";
 import { formatNumber } from "@/utils";
+import { useSendClaimTransaction } from "@/hooks/useSendClaimTransaction";
 
 interface SendClaimModalProps {
   isOpen: boolean;
   onClose: () => void;
   amount: string;
+  signature: string | null;
+  senderPublicKey: string | null;
 }
 
-type ModalState = "input" | "loading" | "success";
+type ModalState = "input" | "loading" | "success" | "error";
 
 // Partner fee: ~0.71 USDC + 0.35% of amount
 const BASE_FEE = 0.71;
@@ -23,32 +26,59 @@ export function SendClaimModal({
   isOpen,
   onClose,
   amount,
+  signature,
+  senderPublicKey,
 }: SendClaimModalProps) {
   const [message, setMessage] = useState("");
   const [state, setState] = useState<ModalState>("input");
   const [claimLink, setClaimLink] = useState("");
+  const [passphrase, setPassphrase] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { sendClaim } = useSendClaimTransaction();
 
   const numAmount = parseFloat(amount) || 0;
   const partnerFee = BASE_FEE + numAmount * FEE_PERCENT;
   const total = numAmount - partnerFee;
 
   const handleProceed = async () => {
+    if (!signature || !senderPublicKey) {
+      setErrorMessage("No session signature. Please reconnect wallet.");
+      setState("error");
+      return;
+    }
+
     setState("loading");
+    setErrorMessage(null);
 
     try {
-      // TODO: Call send_claim API
-      await new Promise((resolve) => setTimeout(resolve, 2000)); // Simulated delay
-      setClaimLink(`${window.location.origin}/claim/abc123`);
+      const result = await sendClaim({
+        amount: numAmount,
+        token: "USDC",
+        message: message.trim() || undefined,
+        signature,
+        senderPublicKey,
+      });
+
+      setClaimLink(result.claimLink);
+      setPassphrase(result.passphrase);
       setState("success");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Send claim failed:", error);
-      setState("input");
+      setErrorMessage(error.message || "Something went wrong");
+      setState("error");
     }
   };
 
   const handleCopyLink = async () => {
     try {
-      await navigator.clipboard.writeText(claimLink);
+      // Build the text to copy: message (if any) + claim link + passphrase
+      let textToCopy = "";
+      if (message.trim()) {
+        textToCopy = `${message.trim()}\n`;
+      }
+      textToCopy += `${claimLink}\n\nPassphrase: ${passphrase}`;
+
+      await navigator.clipboard.writeText(textToCopy);
     } catch (error) {
       console.error("Failed to copy:", error);
     }
@@ -58,7 +88,14 @@ export function SendClaimModal({
     setState("input");
     setMessage("");
     setClaimLink("");
+    setPassphrase("");
+    setErrorMessage(null);
     onClose();
+  };
+
+  const handleRetry = () => {
+    setState("input");
+    setErrorMessage(null);
   };
 
   return (
@@ -139,7 +176,7 @@ export function SendClaimModal({
             exit={{ opacity: 0 }}
           >
             {/* Success Details */}
-            <div className="space-y-3 mb-8">
+            <div className="space-y-3 mb-6">
               <div className="flex justify-between">
                 <span className="text-[#121212]">Amount</span>
                 <span className="text-[#121212]">{formatNumber(numAmount)} USDC</span>
@@ -178,6 +215,31 @@ export function SendClaimModal({
                 />
               </motion.svg>
               Copy Claim Link
+            </motion.button>
+          </motion.div>
+        )}
+
+        {state === "error" && (
+          <motion.div
+            key="error"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex flex-col items-center justify-center py-8"
+          >
+            <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
+              <span className="text-red-500 text-2xl">!</span>
+            </div>
+            <p className="text-[#121212] font-medium mb-2">Failed to Generate Link</p>
+            <p className="text-[#121212]/60 text-sm text-center mb-6">
+              {errorMessage || "Something went wrong"}
+            </p>
+            <motion.button
+              onClick={handleRetry}
+              whileTap={{ scale: 0.98 }}
+              className="w-full h-10 bg-[#121212] rounded-full flex items-center justify-center text-[#fafafa] font-semibold shadow-[0_4px_12px_rgba(18,18,18,0.15)]"
+            >
+              Try Again
             </motion.button>
           </motion.div>
         )}

@@ -169,6 +169,8 @@ export default function Home() {
           isOpen={true}
           onClose={closeModal}
           amount={amount}
+          signature={signature}
+          senderPublicKey={address}
         />
       )}
     </>
