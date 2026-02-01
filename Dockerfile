@@ -25,14 +25,17 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Copy the build output
-COPY --from=builder /app/public ./public
+# Copy standalone output (includes minimal node_modules)
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/public ./public
+
+# Copy privacycash circuit files (WASM and zkey for ZK proofs)
+COPY --from=builder /app/node_modules/privacycash ./node_modules/privacycash
 
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["bun", "run", "start"]
+# Run standalone server directly (not next start)
+CMD ["bun", "server.js"]
