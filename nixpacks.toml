@@ -5,7 +5,7 @@ nixPkgs = ["python3", "gcc", "gnumake", "pkg-config", "systemd", "nodejs_20"]
 cmds = ["npm install -g node-gyp && bun install"]
 
 [phases.build]
-cmds = ["TURBOPACK=0 bun run build"]
+cmds = ["bunx next build --no-turbo"]
 
 [start]
 cmd = "bun run start"
