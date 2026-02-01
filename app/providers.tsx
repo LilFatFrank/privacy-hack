@@ -7,14 +7,11 @@ const solanaConnectors = toSolanaWalletConnectors({
   shouldAutoConnect: true,
 });
 
-const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+// Use placeholder during build if env var not set - Privy won't actually connect
+// but hooks will have context and won't throw
+const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID || "placeholder-build-id";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
-  // During build/prerender, return children without Privy if no app ID
-  if (!privyAppId) {
-    return <>{children}</>;
-  }
-
   return (
     <PrivyProvider
       appId={privyAppId}
