@@ -2,27 +2,21 @@
  * Prepare and Submit Send - Split flow for UI integration
  *
  * Prepare phase:
- * 1. Sponsor pre-funds user with SOL
- * 2. Build unsigned deposit tx (using session signature for encryption)
- * 3. Simulate to get exact remaining balance
- * 4. Build unsigned sweep tx
- * 5. Return unsigned txs for user to sign
+ * 1. Build unsigned deposit tx (using session signature for encryption)
+ * 2. Estimate network fees
+ * 3. Return unsigned tx for user to sign
  *
  * Submit phase:
- * 1. Receive signed txs
+ * 1. Receive signed deposit tx
  * 2. Submit deposit to relayer
- * 3. Submit sweep to network
- * 4. Wait for indexer, withdraw to receiver
+ * 3. Wait for indexer, withdraw to receiver
+ *
+ * Note: User pays their own gas fees (no sponsor funding/sweep)
  */
 
 import {
   Connection,
-  Keypair,
   PublicKey,
-  Transaction,
-  SystemProgram,
-  VersionedTransaction,
-  TransactionMessage,
 } from "@solana/web3.js";
 import * as path from "path";
 import { LocalStorage } from "node-localstorage";
@@ -39,10 +33,8 @@ import {
 } from "../database";
 import { getCircuitBasePathCached } from "../utils/circuitPath";
 
-// Constants
-const RENT_LAMPORTS = 953520 * 2;
-const SDK_MINIMUM = 2_000_000;
-const TOTAL_PREFUND = RENT_LAMPORTS + SDK_MINIMUM;
+// Base fee per signature in Solana
+const BASE_FEE_LAMPORTS = 5000;
 
 // Session message that user signs to derive encryption keys
 export const SESSION_MESSAGE = "Privacy Money account sign in";
@@ -57,7 +49,6 @@ const storage = new LocalStorage(path.join(process.cwd(), "cache"));
 export interface PrepareSendParams {
   connection: Connection;
   senderPublicKey: PublicKey;
-  sponsorKeypair: Keypair;
   sessionSignature: Uint8Array; // 64-byte signature
   receiverAddress: string;
   amount: number;
@@ -68,15 +59,14 @@ export interface PrepareSendParams {
 export interface PrepareSendResult {
   activityId: string;
   unsignedDepositTx: string; // base64 serialized
-  unsignedSweepTx: string; // base64 serialized
-  fundTx: string | null;
-  sweepAmount: number;
   lastValidBlockHeight: number; // For checking if tx is still valid
+  estimatedFeeLamports: number; // Network fee in lamports
+  estimatedFeeSOL: number; // Network fee in SOL
 }
 
 /**
- * Prepare send transactions for user to sign.
- * Returns unsigned deposit and sweep transactions.
+ * Prepare send transaction for user to sign.
+ * User pays their own gas fees.
  */
 export async function prepareSend(
   params: PrepareSendParams
@@ -84,7 +74,6 @@ export async function prepareSend(
   const {
     connection,
     senderPublicKey,
-    sponsorKeypair,
     sessionSignature,
     receiverAddress,
     amount,
@@ -100,7 +89,7 @@ export async function prepareSend(
   console.log("Amount:", amount, token);
 
   // Create activity record
-  console.log("\n[1/5] Creating activity record...");
+  console.log("\n[1/3] Creating activity record...");
   const activity = await createActivity({
     type: "send",
     sender_address: senderPublicKey.toBase58(),
@@ -113,31 +102,10 @@ export async function prepareSend(
   });
   console.log("Activity created:", activity.id);
 
-  // Step 1: Pre-fund user with SOL
-  console.log("\n[2/5] Pre-funding user with SOL...");
-  const userBalance = await connection.getBalance(senderPublicKey);
-
-  let fundTx: string | null = null;
-  if (userBalance < TOTAL_PREFUND) {
-    const needed = TOTAL_PREFUND - userBalance;
-    const fundTransaction = new Transaction().add(
-      SystemProgram.transfer({
-        fromPubkey: sponsorKeypair.publicKey,
-        toPubkey: senderPublicKey,
-        lamports: needed,
-      })
-    );
-    fundTx = await connection.sendTransaction(fundTransaction, [sponsorKeypair]);
-    await connection.confirmTransaction(fundTx, "confirmed");
-    console.log("Fund tx:", fundTx);
-  } else {
-    console.log("User already has enough SOL");
-  }
-
   // Step 2: Build deposit transaction (unsigned)
-  console.log("\n[3/5] Building deposit transaction...");
+  console.log("\n[2/3] Building deposit transaction...");
 
-  const { transaction: depositTx, mintAddress, lastValidBlockHeight: depositLastValidBlockHeight } = await buildDepositSPLTransaction({
+  const { transaction: depositTx, lastValidBlockHeight } = await buildDepositSPLTransaction({
     connection,
     userPublicKey: senderPublicKey,
     sessionSignature,
@@ -148,65 +116,34 @@ export async function prepareSend(
 
   console.log("Deposit tx built (unsigned)");
 
-  // Step 3: Simulate deposit to get post-balance
-  console.log("\n[4/5] Simulating deposit to get exact remaining...");
+  // Step 3: Estimate network fee
+  console.log("\n[3/3] Estimating network fee...");
 
-  const simulation = await connection.simulateTransaction(depositTx, {
-    sigVerify: false,
-    replaceRecentBlockhash: true,
-  });
+  // Get fee from the transaction message
+  const feeCalculator = await connection.getFeeForMessage(depositTx.message, "confirmed");
+  const estimatedFeeLamports = feeCalculator.value ?? BASE_FEE_LAMPORTS;
+  const estimatedFeeSOL = estimatedFeeLamports / 1_000_000_000;
 
-  if (simulation.value.err) {
-    // Clean up activity on failure
+  console.log("Estimated fee:", estimatedFeeLamports, "lamports (", estimatedFeeSOL, "SOL)");
+
+  // Check if user has enough SOL for fees
+  const userBalance = await connection.getBalance(senderPublicKey);
+  console.log("User SOL balance:", userBalance, "lamports");
+
+  if (userBalance < estimatedFeeLamports) {
     await updateActivityStatus(activity.id, "cancelled");
-    throw new Error(`Simulation failed: ${JSON.stringify(simulation.value.err)}`);
+    throw new Error(`Insufficient SOL for network fees. Need ${estimatedFeeLamports} lamports (~${estimatedFeeSOL.toFixed(6)} SOL), have ${userBalance} lamports`);
   }
 
-  // Find user's post-balance from simulation
-  const postBalance = simulation.value.accounts?.[0]?.lamports;
-  const currentBalance = await connection.getBalance(senderPublicKey);
-  const exactRemaining = postBalance ?? (currentBalance - RENT_LAMPORTS - 5000);
-
-  console.log("Exact remaining after deposit:", exactRemaining, "lamports");
-
-  // Step 4: Build sweep transaction with exact amount
-  console.log("\n[5/5] Building sweep transaction...");
-
-  const { blockhash: sweepBlockhash, lastValidBlockHeight: sweepLastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-
-  const sweepMessage = new TransactionMessage({
-    payerKey: sponsorKeypair.publicKey, // Sponsor pays sweep fee
-    recentBlockhash: sweepBlockhash,
-    instructions: [
-      SystemProgram.transfer({
-        fromPubkey: senderPublicKey,
-        toPubkey: sponsorKeypair.publicKey,
-        lamports: exactRemaining,
-      }),
-    ],
-  }).compileToV0Message();
-
-  const sweepTx = new VersionedTransaction(sweepMessage);
-
-  // Sponsor signs the sweep tx (as fee payer)
-  sweepTx.sign([sponsorKeypair]);
-
-  console.log("Sweep amount:", exactRemaining, "lamports");
-
-  // Serialize transactions for frontend
+  // Serialize transaction for frontend
   const unsignedDepositTx = Buffer.from(depositTx.serialize()).toString("base64");
-  const unsignedSweepTx = Buffer.from(sweepTx.serialize()).toString("base64");
-
-  // Use the earlier expiration to be safe
-  const lastValidBlockHeight = Math.min(depositLastValidBlockHeight, sweepLastValidBlockHeight);
 
   return {
     activityId: activity.id,
     unsignedDepositTx,
-    unsignedSweepTx,
-    fundTx,
-    sweepAmount: exactRemaining,
     lastValidBlockHeight,
+    estimatedFeeLamports,
+    estimatedFeeSOL,
   };
 }
 
@@ -217,7 +154,6 @@ export async function prepareSend(
 export interface SubmitSendParams {
   connection: Connection;
   signedDepositTx: string; // base64 serialized
-  signedSweepTx: string; // base64 serialized
   sessionSignature: Uint8Array; // 64-byte signature for deriving keys
   activityId: string;
   senderPublicKey: PublicKey;
@@ -230,9 +166,7 @@ export interface SubmitSendParams {
 export interface SubmitSendResult {
   activityId: string;
   depositTx: string;
-  sweepTx: string;
   withdrawTx: string;
-  finalBalance: number;
 }
 
 /**
@@ -263,7 +197,7 @@ async function relayDepositToIndexer(
 }
 
 /**
- * Submit signed transactions and complete the send flow.
+ * Submit signed deposit transaction and complete the send flow.
  */
 export async function submitSend(
   params: SubmitSendParams
@@ -271,7 +205,6 @@ export async function submitSend(
   const {
     connection,
     signedDepositTx,
-    signedSweepTx,
     sessionSignature,
     activityId,
     senderPublicKey,
@@ -299,7 +232,7 @@ export async function submitSend(
 
   try {
     // Step 1: Submit deposit to relayer
-    console.log("\n[1/4] Submitting deposit to relayer...");
+    console.log("\n[1/3] Submitting deposit to relayer...");
 
     const depositSig = await relayDepositToIndexer(
       signedDepositTx,
@@ -308,25 +241,12 @@ export async function submitSend(
     );
     console.log("Deposit tx:", depositSig);
 
-    // Step 2: Submit sweep to network
-    console.log("\n[2/4] Submitting sweep to network...");
-
-    const sweepTxBytes = Buffer.from(signedSweepTx, "base64");
-    const sweepTransaction = VersionedTransaction.deserialize(sweepTxBytes);
-
-    const sweepSig = await connection.sendRawTransaction(sweepTransaction.serialize());
-    await connection.confirmTransaction(sweepSig, "confirmed");
-    console.log("Sweep tx:", sweepSig);
-
-    const finalBalance = await connection.getBalance(senderPublicKey);
-    console.log("Final balance:", finalBalance, "lamports");
-
-    // Step 3: Wait for indexer
-    console.log("\n[3/4] Waiting for indexer (15s)...");
+    // Step 2: Wait for indexer
+    console.log("\n[2/3] Waiting for indexer (15s)...");
     await new Promise((r) => setTimeout(r, 15000));
 
-    // Step 4: Withdraw to receiver
-    console.log("\n[4/4] Withdrawing to receiver...");
+    // Step 3: Withdraw to receiver
+    console.log("\n[3/3] Withdrawing to receiver...");
 
     // Derive encryption keys from session signature
     const encryptionService = new EncryptionService();
@@ -360,9 +280,7 @@ export async function submitSend(
     return {
       activityId,
       depositTx: depositSig,
-      sweepTx: sweepSig,
       withdrawTx,
-      finalBalance,
     };
   } catch (error) {
     // Mark activity as failed
