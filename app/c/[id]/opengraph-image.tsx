@@ -21,7 +21,7 @@ export default async function Image({
   try {
     // Need absolute URL in edge runtime - relative URLs don't work
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://swish.cash";
-    const res = await fetch(`${baseUrl}/api/claim/${id}`);
+    const res = await fetch(`${baseUrl}/api/send_claim/${id}`);
     if (res.ok) {
       const data = await res.json();
       amount = data.amount || 0;
