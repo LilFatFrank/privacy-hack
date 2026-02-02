@@ -229,7 +229,7 @@ export default function ClaimPage({ params }: { params: Promise<{ id: string }> 
         <div className="w-full max-w-[320px] space-y-2 mb-8">
           <div className="flex justify-between">
             <span className="text-[#121212]">Partner fees</span>
-            <span className="text-[#121212]">{formatNumber(partnerFee)} USDC</span>
+            <span className="text-[#121212]">~{formatNumber(partnerFee)} USDC</span>
           </div>
           <div className="flex justify-between">
             <span className="text-[#121212]">{isSender ? "You get back" : "You receive"}</span>
@@ -237,7 +237,7 @@ export default function ClaimPage({ params }: { params: Promise<{ id: string }> 
           </div>
           <div className="flex justify-between">
             <span className="text-[#121212] font-semibold">Total</span>
-            <span className="text-[#121212] font-semibold">~{formatNumber(claimData.amount)} USDC</span>
+            <span className="text-[#121212] font-semibold">{formatNumber(claimData.amount)} USDC</span>
           </div>
         </div>
 
