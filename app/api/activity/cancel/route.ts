@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { PublicKey } from "@solana/web3.js";
 import nacl from "tweetnacl";
 
-import { getActivityById, updateActivityStatus } from "@/lib/database";
+import { getActivity, updateActivityStatus } from "@/lib/database";
 
 // Session message for verification
 const SESSION_MESSAGE = "Privacy Money account sign in";
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get activity and verify ownership
-    const activity = await getActivityById(activityId);
+    const activity = await getActivity(activityId);
     if (!activity) {
       return NextResponse.json(
         { error: "Activity not found" },
