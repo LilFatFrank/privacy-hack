@@ -22,7 +22,7 @@ Swish brings the simplicity of Venmo to crypto—with zero-knowledge privacy. Ju
 | Transaction history | Public feed | **Only you see it** |
 | On-chain trace | N/A | **None** |
 
-Privacy protocols exist. Payment apps exist. However, Swish is a Venmo-style experience with ZK privacy.
+Privacy protocols exist. Payment apps exist. Swish is the first to combine both—a Venmo-style experience with ZK privacy.
 
 ### Claim Links
 
@@ -112,11 +112,11 @@ You create request → Share link → They pay → You receive
 
 ### What We Were Trying to Achieve
 
+Privacy Cash fee is ~0.71 USDC + 0.35% of amount + SOL for gas.
+
 We wanted Swish to feel like Venmo—**you shouldn't think about gas**.
 
 In Venmo, you don't care about network fees. Simple.
-
-In crypto? "Sorry, I can't send you USDC because I don't have SOL for gas." Terrible UX.
 
 **Our goal:** A sponsor wallet pays all gas fees behind the scenes. User never touches SOL.
 
@@ -254,10 +254,10 @@ For claim links, we use ephemeral "burner" wallets:
                     │
         ┌───────────┴───────────┐
         ▼                       ▼
-   ┌─────────┐            ┌──────────┐
-   │  Claim  │            │  Reclaim │
-   │ (receiver)           │  (sender) │
-   └─────────┘            └──────────┘
+   ┌──────────┐           ┌──────────┐
+   │  Claim   │           │  Reclaim │
+   │(receiver)│           │ (sender) │
+   └──────────┘           └──────────┘
 ```
 
 The burner wallet:
@@ -309,18 +309,18 @@ The burner wallet:
 We tested extensively. Every flow, edge case, mainnet.
 
 ```bash
-bun install
+npm install
 
 # Test each flow
-bun run test:send      # Direct send
-bun run test:claim     # Claim links
-bun run test:fulfill   # Request fulfillment
+npm run test:send      # Direct send
+npm run test:claim     # Claim links
+npm run test:fulfill   # Request fulfillment
 
 # Mainnet tests (real USDC)
-bun run test:usdc      # Requires CONFIRM_MAINNET_TEST=true
+npm run test:usdc      # Requires CONFIRM_MAINNET_TEST=true
 
 # Sponsor testing
-bun run test:sponsor   # Sponsor-paid transactions
+npm run test:sponsor   # Sponsor-paid transactions
 ```
 
 | Test File | Coverage |
@@ -328,9 +328,6 @@ bun run test:sponsor   # Sponsor-paid transactions
 | `prepare-submit-send.test.ts` | Full API flow for sends |
 | `prepare-submit-claim.test.ts` | Claim link creation + redemption |
 | `prepare-submit-fulfill.test.ts` | Request payment flow |
-| `sponsored-send.test.ts` | Sponsor as fee payer |
-| `atomic-sponsor.test.ts` | Atomic sponsor patterns |
-| `usdc-mainnet.test.ts` | Real mainnet transactions |
 
 ---
 
@@ -380,7 +377,7 @@ bun run test:sponsor   # Sponsor-paid transactions
 RPC_URL=https://api.mainnet-beta.solana.com
 NEXT_PUBLIC_RPC_URL=https://api.mainnet-beta.solana.com
 
-# Sponsor (pays gas for claim/reclaim)
+# Sponsor (pays fees for claim/reclaim)
 SPONSOR_PRIVATE_KEY=<base58>
 
 # Privy

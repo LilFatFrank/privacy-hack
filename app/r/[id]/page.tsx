@@ -327,13 +327,13 @@ export default function RequestPage({
         <div className="flex justify-between">
           <span className="text-[#121212]">Partner fees</span>
           <span className="text-[#121212]">
-            {formatNumber(partnerFee)} USDC
+            ~{formatNumber(partnerFee)} USDC
           </span>
         </div>
         <div className="flex justify-between">
           <span className="text-[#121212]">{isRequestor ? "You receive" : "They receive"}</span>
           <span className="text-[#121212]">
-            {formatNumber(requestorReceives)} USDC
+            ~{formatNumber(requestorReceives)} USDC
           </span>
         </div>
         <div className="flex justify-between">
