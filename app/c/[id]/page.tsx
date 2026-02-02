@@ -15,7 +15,7 @@ interface ClaimData {
   status: string;
   message: string | null;
   createdAt: string;
-  senderAddress: string;
+  isSender: boolean;
 }
 
 type PageState = "loading" | "ready" | "success" | "error" | "not_found" | "already_claimed" | "reclaiming" | "reclaimed";
@@ -33,17 +33,15 @@ export default function ClaimPage({ params }: { params: Promise<{ id: string }> 
   const [showPassphraseModal, setShowPassphraseModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Check if current user is the sender (owner of this claim link)
-  const isSender =
-    authenticated &&
-    address &&
-    claimData?.senderAddress &&
-    address.toLowerCase() === claimData.senderAddress.toLowerCase();
-
   useEffect(() => {
     async function fetchClaimData() {
       try {
-        const res = await fetch(`/api/send_claim/${id}`);
+        // Pass wallet address if available to check if user is sender
+        const url = address
+          ? `/api/send_claim/${id}?wallet=${address}`
+          : `/api/send_claim/${id}`;
+
+        const res = await fetch(url);
 
         if (res.status === 404) {
           setPageState("not_found");
@@ -69,7 +67,7 @@ export default function ClaimPage({ params }: { params: Promise<{ id: string }> 
     }
 
     fetchClaimData();
-  }, [id]);
+  }, [id, address]);
 
   const handleClaim = () => {
     if (!authenticated) {
@@ -232,7 +230,7 @@ export default function ClaimPage({ params }: { params: Promise<{ id: string }> 
             <span className="text-[#121212]">~{formatNumber(partnerFee)} USDC</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-[#121212]">{isSender ? "You get back" : "You receive"}</span>
+            <span className="text-[#121212]">{claimData?.isSender ? "You get back" : "You receive"}</span>
             <span className="text-[#121212]">~{formatNumber(youReceive)} USDC</span>
           </div>
           <div className="flex justify-between">
@@ -242,7 +240,7 @@ export default function ClaimPage({ params }: { params: Promise<{ id: string }> 
         </div>
 
         {/* Claim Button (for receivers) */}
-        {pageState === "ready" && !isSender && (
+        {pageState === "ready" && !claimData?.isSender && (
           <motion.button
             onClick={handleClaim}
             whileTap={{ scale: 0.98 }}
@@ -253,7 +251,7 @@ export default function ClaimPage({ params }: { params: Promise<{ id: string }> 
         )}
 
         {/* Reclaim Button (for sender only) */}
-        {pageState === "ready" && isSender && (
+        {pageState === "ready" && claimData?.isSender && (
           <motion.button
             onClick={handleReclaim}
             whileTap={{ scale: 0.98 }}

@@ -10,6 +10,20 @@ export const size = {
 export const contentType = "image/png";
 
 export default async function Image({ params }: { params: { id: string } }) {
+  // Fetch Jost font
+  const fontData = await fetch(
+    "https://fonts.googleapis.com/css2?family=Jost:wght@300;400&display=swap",
+    { headers: { "User-Agent": "Mozilla/5.0" } }
+  ).then((res) => res.text());
+
+  const fontUrl = fontData.match(
+    /src: url\(([^)]+)\) format\('truetype'\)/
+  )?.[1];
+
+  const font = fontUrl
+    ? await fetch(fontUrl).then((res) => res.arrayBuffer())
+    : null;
+
   // Fetch request data
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   let amount = 0;
@@ -35,7 +49,7 @@ export default async function Image({ params }: { params: { id: string } }) {
           alignItems: "center",
           justifyContent: "center",
           backgroundColor: "#fafafa",
-          fontFamily: "system-ui, sans-serif",
+          fontFamily: "Jost, sans-serif",
         }}
       >
         {/* Logo */}
@@ -81,6 +95,16 @@ export default async function Image({ params }: { params: { id: string } }) {
     ),
     {
       ...size,
+      fonts: font
+        ? [
+            {
+              name: "Jost",
+              data: font,
+              style: "normal",
+              weight: 300,
+            },
+          ]
+        : undefined,
     }
   );
 }

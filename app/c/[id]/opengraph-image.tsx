@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
 
-export const alt = "Requesting";
+export const alt = "Claim";
 export const size = {
   width: 505,
   height: 505,
@@ -15,6 +15,20 @@ export default async function Image({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+
+  // Fetch Jost font
+  const fontData = await fetch(
+    "https://fonts.googleapis.com/css2?family=Jost:wght@300;400&display=swap",
+    { headers: { "User-Agent": "Mozilla/5.0" } }
+  ).then((res) => res.text());
+
+  const fontUrl = fontData.match(
+    /src: url\(([^)]+)\) format\('truetype'\)/
+  )?.[1];
+
+  const font = fontUrl
+    ? await fetch(fontUrl).then((res) => res.arrayBuffer())
+    : null;
 
   let amount = 0;
 
@@ -60,7 +74,7 @@ export default async function Image({
           alignItems: "center",
           justifyContent: "center",
           top: 160,
-          fontFamily: "system-ui, sans-serif",
+          fontFamily: "Jost, sans-serif",
         }}
       >
         <div
@@ -89,6 +103,16 @@ export default async function Image({
     </div>,
     {
       ...size,
+      fonts: font
+        ? [
+            {
+              name: "Jost",
+              data: font,
+              style: "normal",
+              weight: 300,
+            },
+          ]
+        : undefined,
     },
   );
 }
