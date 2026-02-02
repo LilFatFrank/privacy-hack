@@ -16,6 +16,20 @@ export default async function Image({
 }) {
   const { id } = await params;
 
+  // Fetch Jost font
+  const fontData = await fetch(
+    "https://fonts.googleapis.com/css2?family=Jost:wght@300;400&display=swap",
+    { headers: { "User-Agent": "Mozilla/5.0" } }
+  ).then((res) => res.text());
+
+  const fontUrl = fontData.match(
+    /src: url\(([^)]+)\) format\('truetype'\)/
+  )?.[1];
+
+  const font = fontUrl
+    ? await fetch(fontUrl).then((res) => res.arrayBuffer())
+    : null;
+
   let amount = 0;
 
   try {
@@ -60,7 +74,7 @@ export default async function Image({
           alignItems: "center",
           justifyContent: "center",
           top: 160,
-          fontFamily: "system-ui, sans-serif",
+          fontFamily: "Jost, sans-serif",
         }}
       >
         <div
@@ -89,6 +103,16 @@ export default async function Image({
     </div>,
     {
       ...size,
+      fonts: font
+        ? [
+            {
+              name: "Jost",
+              data: font,
+              style: "normal",
+              weight: 300,
+            },
+          ]
+        : undefined,
     },
   );
 }

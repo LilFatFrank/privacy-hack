@@ -10,6 +10,9 @@ export async function GET(
   try {
     const { id } = await params;
 
+    // Get wallet address from query param (optional)
+    const walletAddress = request.nextUrl.searchParams.get("wallet");
+
     const activity = await getActivity(id);
     if (!activity) {
       return NextResponse.json({ error: "Claim link not found" }, { status: 404 });
@@ -27,6 +30,11 @@ export async function GET(
       token = "USDT";
     }
 
+    // Check if requester is the sender (for reclaim detection)
+    const isSender = walletAddress
+      ? walletAddress.toLowerCase() === activity.sender_address?.toLowerCase()
+      : false;
+
     // Return public info only (no sensitive data)
     return NextResponse.json({
       id: activity.id,
@@ -35,8 +43,8 @@ export async function GET(
       status: activity.status,
       message: activity.message,
       createdAt: activity.created_at,
-      senderAddress: activity.sender_address,
-      // Don't expose burner_address, or encrypted data
+      isSender,
+      // Don't expose sender_address, burner_address, or encrypted data
     });
   } catch (error: any) {
     console.error("Get claim link error:", error);
