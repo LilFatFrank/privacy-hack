@@ -1,7 +1,20 @@
 import { createClient } from "@supabase/supabase-js";
 import { EncryptedPayload, PassphraseEncryptedPayload } from "./crypto";
 
-// Types
+// User types
+export type ConnectionType = "wallet" | "x";
+
+export interface User {
+  id: string;
+  wallet_address: string;
+  connection_type: ConnectionType;
+  twitter_handle: string | null;
+  privy_user_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+// Activity types
 export type ActivityType = "send" | "request" | "send_claim";
 
 // Encrypted data can be either asymmetric (EncryptedPayload) or symmetric (PassphraseEncryptedPayload)
@@ -167,4 +180,126 @@ export async function getUserStats(userAddress: string): Promise<{
     .reduce((sum: number, a: Activity) => sum + a.amount, 0);
 
   return { total_sent, total_received, total_claimed };
+}
+
+// --- User operations ---
+
+// Upsert user (insert or update on wallet_address conflict)
+export async function upsertUser(data: {
+  wallet_address: string;
+  connection_type: ConnectionType;
+  twitter_handle?: string | null;
+  privy_user_id?: string | null;
+}): Promise<User> {
+  const now = Date.now();
+  const { data: result, error } = await getSupabase()
+    .from("users")
+    .upsert(
+      {
+        wallet_address: data.wallet_address,
+        connection_type: data.connection_type,
+        twitter_handle: data.twitter_handle || null,
+        privy_user_id: data.privy_user_id || null,
+        updated_at: now,
+      },
+      { onConflict: "wallet_address" }
+    )
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to upsert user: ${error.message}`);
+  }
+
+  return result;
+}
+
+// Get user by wallet address
+export async function getUserByWallet(address: string): Promise<User | null> {
+  const { data, error } = await getSupabase()
+    .from("users")
+    .select("*")
+    .eq("wallet_address", address)
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    throw new Error(`Failed to get user by wallet: ${error.message}`);
+  }
+
+  return data;
+}
+
+// Get user by Twitter handle
+export async function getUserByTwitterHandle(handle: string): Promise<User | null> {
+  const { data, error } = await getSupabase()
+    .from("users")
+    .select("*")
+    .eq("twitter_handle", handle)
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    throw new Error(`Failed to get user by twitter handle: ${error.message}`);
+  }
+
+  return data;
+}
+
+// --- Twitter ID cache operations ---
+
+export interface TwitterIdCache {
+  twitter_handle: string;
+  twitter_numeric_id: string;
+  created_at: number;
+}
+
+// Look up cached Twitter numeric ID by handle
+export async function getTwitterIdByHandle(handle: string): Promise<string | null> {
+  const { data, error } = await getSupabase()
+    .from("twitter_id_cache")
+    .select("twitter_numeric_id")
+    .eq("twitter_handle", handle.toLowerCase())
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    throw new Error(`Failed to get twitter ID cache: ${error.message}`);
+  }
+
+  return data?.twitter_numeric_id ?? null;
+}
+
+// Store a handle → numeric ID mapping in cache
+export async function cacheTwitterId(handle: string, numericId: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("twitter_id_cache")
+    .upsert(
+      {
+        twitter_handle: handle.toLowerCase(),
+        twitter_numeric_id: numericId,
+        created_at: Date.now(),
+      },
+      { onConflict: "twitter_handle" }
+    );
+
+  if (error) {
+    throw new Error(`Failed to cache twitter ID: ${error.message}`);
+  }
+}
+
+// Get user by Privy user ID
+export async function getUserByPrivyId(privyId: string): Promise<User | null> {
+  const { data, error } = await getSupabase()
+    .from("users")
+    .select("*")
+    .eq("privy_user_id", privyId)
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    throw new Error(`Failed to get user by privy ID: ${error.message}`);
+  }
+
+  return data;
 }

@@ -33,8 +33,10 @@ export function useSessionSignature() {
     error: null,
   });
 
-  // Try to get wallet from useWallets first, fallback to user's linked wallet
-  const solanaWallet = wallets[0];
+  // For Twitter users, prefer the embedded wallet over external wallets (e.g. Phantom)
+  const isTwitterUser = !!user?.twitter;
+  const embeddedWallet = wallets.find((w) => w.walletClientType === "privy");
+  const solanaWallet = isTwitterUser && embeddedWallet ? embeddedWallet : wallets[0];
   const userWalletAddress = user?.wallet?.address;
 
   // Debug logging

@@ -36,7 +36,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         appearance: {
           accentColor: "#6A6FF5",
           theme: "#FFFFFF",
-          showWalletLoginFirst: true,
+          showWalletLoginFirst: false,
           logo: "/assets/logo.svg",
           walletChainType: "solana-only",
           walletList: [
@@ -46,7 +46,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
             "backpack",
           ],
         },
-        loginMethods: ["wallet"],
+        loginMethods: ["wallet", "twitter"],
         fundingMethodConfig: {
           moonpay: {
             useSandbox: true,
@@ -58,7 +58,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
             createOnLogin: "off",
           },
           solana: {
-            createOnLogin: "off",
+            createOnLogin: "users-without-wallets",
           },
         },
         mfa: {

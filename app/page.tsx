@@ -1,10 +1,12 @@
 "use client";
 
 import { usePrivy } from "@privy-io/react-auth";
-import { useCallback, useState } from "react";
-import { motion } from "motion/react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import Image from "next/image";
 import { useSessionSignature } from "@/hooks/useSessionSignature";
 import { useUSDCBalance } from "@/hooks/useUSDCBalance";
+import { useUserRegistration } from "@/hooks/useUserRegistration";
 import { formatNumber } from "@/utils";
 import {
   ActionButton,
@@ -17,15 +19,42 @@ import {
 type ModalType = "send" | "receive" | "sendClaim" | null;
 
 export default function Home() {
-  const { login, authenticated, logout } = usePrivy();
+  const { login, authenticated, logout, user } = usePrivy();
   const { walletAddress, signature, address } = useSessionSignature();
-  const { balance, isLoading: balanceLoading, refetch: refetchUSDCBalance } = useUSDCBalance(walletAddress);
+  useUserRegistration();
+  const {
+    balance,
+    isLoading: balanceLoading,
+    refetch: refetchUSDCBalance,
+  } = useUSDCBalance(walletAddress);
   const [amount, setAmount] = useState("0");
   const [activeModal, setActiveModal] = useState<ModalType>(null);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const isXUser = !!user?.twitter;
+  const twitterHandle = user?.twitter?.username;
 
   const numAmount = parseFloat(amount) || 0;
   const hasValidAmount = numAmount > 0;
   const exceedsBalance = balance !== null && numAmount > balance;
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
+        setShowDropdown(false);
+      }
+    };
+    if (showDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showDropdown]);
 
   const handleNumberPress = (num: string) => {
     if (amount === "0" && num !== ".") {
@@ -55,7 +84,6 @@ export default function Home() {
       return;
     }
 
-    // For send actions, check if amount exceeds balance
     if (action === "send" && exceedsBalance) {
       return;
     }
@@ -68,12 +96,34 @@ export default function Home() {
     setActiveModal(null);
   };
 
+  const handleCopyAddress = async () => {
+    if (!address) return;
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+
+  const formatAddr = (addr: string) => {
+    if (addr.length <= 10) return addr;
+    return `${addr.slice(0, 4)}...${addr.slice(-4)}`;
+  };
+
   const getBalanceDisplay = useCallback(() => {
     if (!authenticated) return "Connect Wallet";
     if (balanceLoading || !walletAddress) return "Loading...";
     if (balance !== null) return `${formatNumber(balance)} USDC`;
     return "0 USDC";
   }, [authenticated, balanceLoading, balance, walletAddress]);
+
+  const handleBalanceClick = () => {
+    if (!authenticated) {
+      login();
+      return;
+    }
+    setShowDropdown((prev) => !prev);
+  };
 
   return (
     <>
@@ -89,12 +139,88 @@ export default function Home() {
               className="w-full text-6xl font-light text-[#121212] bg-transparent border-none outline-none text-center cursor-default select-none caret-transparent"
             />
           </div>
-          <button
-            onClick={() => (!authenticated ? login() : logout())}
-            className="mt-2 text-sm text-[#121212]/50 hover:text-[#121212]/70 transition-colors"
-          >
-            {getBalanceDisplay()}
-          </button>
+
+          {/* Balance / Dropdown */}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={handleBalanceClick}
+              className="mt-2 text-sm text-[#121212]/50 hover:text-[#121212]/70 transition-colors"
+            >
+              {getBalanceDisplay()}
+            </button>
+
+            <AnimatePresence>
+              {showDropdown && authenticated && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-[#fafafa] border border-[#121212]/10 rounded-2xl shadow-lg z-50 overflow-hidden"
+                >
+                  {/* Wallet Address */}
+                  <button
+                    onClick={handleCopyAddress}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-[#121212]/5 transition-colors"
+                  >
+                    <Image
+                      src="/assets/sol-icon.svg"
+                      alt=""
+                      width={16}
+                      height={16}
+                    />
+                    <span className="text-[#121212] text-sm flex-1 text-left">
+                      {address ? formatAddr(address) : ""}
+                    </span>
+                    <Image
+                      src="/assets/copy-icon.svg"
+                      alt="Copy"
+                      width={14}
+                      height={14}
+                    />
+                    {copied && (
+                      <span className="text-[#008834] text-xs">Copied</span>
+                    )}
+                  </button>
+
+                  {/* X Handle */}
+                  {isXUser && twitterHandle && (
+                    <div className="w-full flex items-center gap-2.5 px-4 py-3">
+                      <Image
+                        src="/assets/x-icon.svg"
+                        alt=""
+                        width={16}
+                        height={16}
+                      />
+                      <span className="text-[#121212]/60 text-sm">
+                        @{twitterHandle}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Divider */}
+                  <div className="border-t border-[#121212]/10" />
+
+                  {/* Logout */}
+                  <button
+                    onClick={() => {
+                      setShowDropdown(false);
+                      logout();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-[#121212]/5 transition-colors"
+                  >
+                    <Image
+                      src="/assets/logout-icon.svg"
+                      alt=""
+                      width={16}
+                      height={16}
+                    />
+                    <span className="text-[#121212] text-sm">Logout</span>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
 
         {/* Number Pad */}
