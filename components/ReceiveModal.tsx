@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Modal } from "./Modal";
 import { Spinner } from "./Spinner";
 import { formatNumber } from "@/utils";
+import { useFee } from "@/hooks/useFee";
 
 interface ReceiveModalProps {
   isOpen: boolean;
@@ -16,10 +17,6 @@ interface ReceiveModalProps {
 }
 
 type ModalState = "input" | "loading" | "success" | "error";
-
-// Partner fee: ~0.71 USDC + 0.35% of amount
-const BASE_FEE = 0.71;
-const FEE_PERCENT = 0.0035; // 0.35%
 
 export function ReceiveModal({
   isOpen,
@@ -33,9 +30,10 @@ export function ReceiveModal({
   const [requestLink, setRequestLink] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const { baseFee, feePercent } = useFee();
 
   const numAmount = parseFloat(amount) || 0;
-  const partnerFee = BASE_FEE + numAmount * FEE_PERCENT;
+  const partnerFee = baseFee + numAmount * feePercent;
   const youReceive = numAmount - partnerFee;
 
   const handleProceed = async () => {

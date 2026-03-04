@@ -9,6 +9,7 @@ import { Spinner } from "./Spinner";
 import { QRScanner } from "./QRScanner";
 import { formatNumber } from "@/utils";
 import { useSendTransaction } from "@/hooks/useSendTransaction";
+import { useFee } from "@/hooks/useFee";
 
 interface SendModalProps {
   isOpen: boolean;
@@ -21,10 +22,6 @@ interface SendModalProps {
 
 type ModalState = "input" | "loading" | "success" | "error";
 type RecipientType = "wallet" | "x";
-
-// Partner fee: ~0.71 USDC + 0.35% of amount
-const BASE_FEE = 0.71;
-const FEE_PERCENT = 0.0035; // 0.35%
 
 export function SendModal({
   isOpen,
@@ -42,9 +39,10 @@ export function SendModal({
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [isResolvingX, setIsResolvingX] = useState(false);
   const { send } = useSendTransaction();
+  const { baseFee, feePercent } = useFee();
 
   const numAmount = parseFloat(amount) || 0;
-  const partnerFee = BASE_FEE + numAmount * FEE_PERCENT;
+  const partnerFee = baseFee + numAmount * feePercent;
   const total = numAmount - partnerFee;
 
   const isValidAddress = useMemo(() => {

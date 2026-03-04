@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Modal } from "./Modal";
 import { Spinner } from "./Spinner";
 import { formatNumber } from "@/utils";
+import { useFee } from "@/hooks/useFee";
 
 interface ClaimPassphraseModalProps {
   isOpen: boolean;
@@ -18,10 +19,6 @@ interface ClaimPassphraseModalProps {
 
 type ModalState = "input" | "loading" | "success" | "error";
 
-// Partner fee: ~0.71 USDC + 0.35% of amount
-const BASE_FEE = 0.71;
-const FEE_PERCENT = 0.0035; // 0.35%
-
 export function ClaimPassphraseModal({
   isOpen,
   onClose,
@@ -33,8 +30,9 @@ export function ClaimPassphraseModal({
   const [passphrase, setPassphrase] = useState("");
   const [state, setState] = useState<ModalState>("input");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { baseFee, feePercent } = useFee();
 
-  const partnerFee = BASE_FEE + amount * FEE_PERCENT;
+  const partnerFee = baseFee + amount * feePercent;
   const total = amount - partnerFee;
 
   const handleProceed = async () => {
