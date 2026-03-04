@@ -5,9 +5,12 @@ import { motion, AnimatePresence } from "motion/react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
+import { useExportWallet } from "@privy-io/react-auth/solana";
 import { formatNumber } from "@/utils";
-import { Spinner } from "@/components";
+import { Spinner, AddFundsModal } from "@/components";
 import { useSessionSignature } from "@/hooks/useSessionSignature";
+import { useUSDCBalance } from "@/hooks/useUSDCBalance";
+import { useSOLBalance } from "@/hooks/useSOLBalance";
 
 interface Activity {
   id: string;
@@ -22,8 +25,11 @@ interface Activity {
 }
 
 interface Stats {
+  sent_direct: number;
+  sent_claim: number;
   total_sent: number;
   total_received: number;
+  total_requested: number;
   total_claimed: number;
 }
 
@@ -39,12 +45,28 @@ const STATUS_COLORS = {
   cancelled: "#CB0000",
 };
 
+type TabType = "wallet" | "activity";
+
 export default function ProfilePage() {
-  const { login, logout, authenticated } = usePrivy();
-  const { address } = useSessionSignature();
+  const { login, logout, authenticated, user } = usePrivy();
+  const { exportWallet } = useExportWallet();
+  const { address, walletAddress } = useSessionSignature();
+  const { balance: usdcBalance, isLoading: usdcLoading } =
+    useUSDCBalance(walletAddress);
+  const {
+    balance: solBalance,
+    balanceUSD: solBalanceUSD,
+    isLoading: solLoading,
+  } = useSOLBalance(walletAddress);
+
   const [userData, setUserData] = useState<UserData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [showAllActivities, setShowAllActivities] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>("wallet");
+  const [showAddFunds, setShowAddFunds] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const isXUser = !!user?.twitter;
+  const twitterHandle = user?.twitter?.username;
 
   useEffect(() => {
     async function fetchUserData() {
@@ -81,20 +103,53 @@ export default function ProfilePage() {
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays <= 7) return `${diffDays}d ago`;
 
-    // After 7 days, show date like "21 Mar"
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const months = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
     return `${date.getDate()} ${months[date.getMonth()]}`;
   };
 
+  const formatAddr = (addr: string) => {
+    if (addr.length <= 10) return addr;
+    return `${addr.slice(0, 4)}...${addr.slice(-4)}`;
+  };
+
+  const handleCopyAddress = async () => {
+    if (!address) return;
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+
   const getActivityLabel = (activity: Activity) => {
+    const isSender =
+      activity.sender_address?.toLowerCase() === address?.toLowerCase();
     switch (activity.type) {
       case "send":
-        return `Sent ${formatNumber(activity.amount)} USDC`;
+        return isSender
+          ? `Sent ${formatNumber(activity.amount)} USDC`
+          : `Received ${formatNumber(activity.amount)} USDC`;
       case "send_claim":
-        return `Sent ${formatNumber(activity.amount)} USDC via Claim`;
+        return isSender
+          ? `Sent ${formatNumber(activity.amount)} USDC via Claim`
+          : `Claimed ${formatNumber(activity.amount)} USDC`;
       case "request":
-        // Check if user is the requester or the payer
-        if (activity.receiver_address?.toLowerCase() === address?.toLowerCase()) {
+        if (
+          activity.receiver_address?.toLowerCase() === address?.toLowerCase()
+        ) {
           return `Requested ${formatNumber(activity.amount)} USDC`;
         }
         return `Fulfilled ${formatNumber(activity.amount)} USDC`;
@@ -104,9 +159,10 @@ export default function ProfilePage() {
   };
 
   const getActivityIcon = (activity: Activity) => {
-    // Send and send_claim show up arrow, request shows down arrow for requester
+    const isSender =
+      activity.sender_address?.toLowerCase() === address?.toLowerCase();
     if (activity.type === "send" || activity.type === "send_claim") {
-      return "/assets/send.svg";
+      return isSender ? "/assets/send.svg" : "/assets/receive.svg";
     }
     if (activity.type === "request") {
       if (activity.receiver_address?.toLowerCase() === address?.toLowerCase()) {
@@ -118,15 +174,9 @@ export default function ProfilePage() {
   };
 
   const getActivityLink = (activity: Activity): string | null => {
-    // Only link open request and claim activities
     if (activity.status !== "open") return null;
-
-    if (activity.type === "request") {
-      return `/r/${activity.id}`;
-    }
-    if (activity.type === "send_claim") {
-      return `/c/${activity.id}`;
-    }
+    if (activity.type === "request") return `/r/${activity.id}`;
+    if (activity.type === "send_claim") return `/c/${activity.id}`;
     return null;
   };
 
@@ -142,9 +192,7 @@ export default function ProfilePage() {
           className="mt-0.5 invert"
         />
         <div className="flex-1 min-w-0">
-          <p className="text-[#121212] text-sm">
-            {getActivityLabel(activity)}
-          </p>
+          <p className="text-[#121212] text-sm">{getActivityLabel(activity)}</p>
           <p
             className="text-xs font-normal uppercase"
             style={{ color: STATUS_COLORS[activity.status] }}
@@ -169,7 +217,7 @@ export default function ProfilePage() {
       );
     }
 
-    return <div className="flex items-start gap-3">{content}</div>;
+    return <div className="flex items-start gap-3 py-1">{content}</div>;
   };
 
   // Not connected state
@@ -183,21 +231,12 @@ export default function ProfilePage() {
         >
           Connect Wallet
         </motion.button>
-        <div className="mt-2 flex items-center gap-2 text-[#121212]/50 text-sm">
-          <span>Powered by</span>
-          <Image
-            src="/assets/privacy-cash-logo.svg"
-            alt="Privacy Cash"
-            width={20}
-            height={20}
-          />
-        </div>
       </main>
     );
   }
 
   // Loading state
-  if (isLoading) {
+  if (isLoading && !userData) {
     return (
       <main className="flex flex-col items-center justify-center p-4 w-full min-h-[60vh]">
         <Spinner size={48} color="#121212" />
@@ -206,127 +245,242 @@ export default function ProfilePage() {
     );
   }
 
-  const recentActivities = userData?.activities?.slice(0, 3) || [];
+  const totalUSD = (usdcBalance || 0) + (solBalanceUSD || 0);
   const allActivities = userData?.activities || [];
 
   return (
     <>
       <main className="flex flex-col items-center p-4 w-full">
-        {/* Wallet Section */}
-        <div className="w-full max-w-[320px] mb-8">
-          <h2 className="text-2xl font-medium text-[#121212] mb-4">Wallet</h2>
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <span className="text-[#121212]">Sends</span>
-              <span className="text-[#121212]">
-                {formatNumber(userData?.stats?.total_sent || 0)} USDC
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[#121212]">Requests</span>
-              <span className="text-[#121212]">
-                {formatNumber(userData?.stats?.total_received || 0)} USDC
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[#121212]">Sends via Claim</span>
-              <span className="text-[#121212]">
-                {formatNumber(userData?.stats?.total_claimed || 0)} USDC
-              </span>
+        {/* Header: Address + X handle */}
+        <div className="w-full max-w-[320px] mb-6">
+          <div className="flex items-center justify-between gap-2 w-full">
+            <span className="text-[#121212] font-medium text-lg">
+              {address ? formatAddr(address) : ""}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={copied ? undefined : handleCopyAddress}
+                className={`p-1 rounded-full transition-colors ${copied ? "pointer-events-none" : "hover:bg-[#121212]/5"}`}
+              >
+                <Image
+                  src={copied ? "/assets/success-alt.svg" : "/assets/copy-icon.svg"}
+                  alt=""
+                  width={copied ? 16 : 16}
+                  height={copied ? 8 : 16}
+                />
+              </button>
+              <button
+                onClick={logout}
+                className="p-1 hover:bg-[#121212]/5 rounded-full transition-colors"
+              >
+                <Image
+                  src="/assets/logout-icon.svg"
+                  alt="Logout"
+                  width={16}
+                  height={16}
+                />
+              </button>
             </div>
           </div>
-        </div>
-
-        {/* Activity Section */}
-        <div className="w-full max-w-[320px] mb-8">
-          <h2 className="text-2xl font-medium text-[#121212] mb-4">Activity</h2>
-
-          {recentActivities.length === 0 ? (
-            <p className="text-[#121212]/50 text-sm">No activity yet</p>
-          ) : (
-            <div className="space-y-2">
-              {recentActivities.map((activity) => (
-                <ActivityItem key={activity.id} activity={activity} />
-              ))}
+          {isXUser && twitterHandle && (
+            <div className="flex items-center gap-1.5 mt-1">
+              <Image src="/assets/x-icon.svg" alt="X" width={14} height={14} />
+              <a
+                className="text-[#121212]/60 text-sm decoration-dashed underline underline-offset-4"
+                href={`https://x.com/${twitterHandle}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                @{twitterHandle}
+              </a>
             </div>
           )}
-
-          {allActivities.length > 3 && (
-            <button
-              onClick={() => setShowAllActivities(true)}
-              className="mt-3 text-[#121212]/70 text-sm underline underline-offset-4 decoration-dashed hover:text-[#121212] transition-colors"
-            >
-              View all
-            </button>
-          )}
         </div>
 
-        {/* Disconnect Button */}
-        <motion.button
-          onClick={logout}
-          whileTap={{ scale: 0.98 }}
-          className="w-full max-w-[320px] h-10 bg-[#121212] rounded-full flex items-center justify-center text-[#fafafa] font-semibold shadow-[0_4px_12px_rgba(18,18,18,0.15)]"
-        >
-          Disconnect
-        </motion.button>
-
-        {/* Powered by */}
-        <div className="mt-2 flex items-center gap-2 text-[#121212]/50 text-sm">
-          <span>Powered by</span>
-          <Image
-            src="/assets/privacy-cash-logo.svg"
-            alt="Privacy Cash"
-            width={20}
-            height={20}
-          />
+        {/* Tab Toggle */}
+        <div className="w-full max-w-[320px] flex mb-6 bg-[#121212]/5 rounded-full p-1">
+          <button
+            onClick={() => setActiveTab("wallet")}
+            className={`flex-1 h-8 rounded-full text-sm font-medium transition-all ${
+              activeTab === "wallet"
+                ? "bg-[#121212] text-[#fafafa]"
+                : "text-[#121212]/50"
+            }`}
+          >
+            Wallet
+          </button>
+          <button
+            onClick={() => setActiveTab("activity")}
+            className={`flex-1 h-8 rounded-full text-sm font-medium transition-all ${
+              activeTab === "activity"
+                ? "bg-[#121212] text-[#fafafa]"
+                : "text-[#121212]/50"
+            }`}
+          >
+            Activity
+          </button>
         </div>
-      </main>
 
-      {/* View All Modal */}
-      <AnimatePresence>
-        {showAllActivities && (
-          <>
-            {/* Backdrop */}
+        <AnimatePresence mode="wait">
+          {activeTab === "wallet" && (
             <motion.div
+              key="wallet"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setShowAllActivities(false)}
-              className="fixed inset-0 bg-black/50 z-40 backdrop-blur-xs"
-            />
-
-            {/* Modal */}
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="fixed bottom-0 left-0 right-0 z-50 bg-[#fafafa] rounded-t-3xl h-[50vh] flex flex-col md:bottom-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-full md:max-w-md md:rounded-3xl md:h-[60vh]"
+              className="w-full max-w-[320px]"
             >
-              {/* Handle bar (mobile) */}
-              <div className="flex justify-center pt-3 md:hidden shrink-0">
-                <div className="w-10 h-1 bg-[#121212]/20 rounded-full" />
+              {/* Total Balance */}
+              <div className="text-center mb-6">
+                <p className="text-[#121212]/50 text-sm mb-1">Total Balance</p>
+                <p className="text-4xl font-normal text-[#121212]">
+                  {usdcLoading || solLoading
+                    ? "..."
+                    : `$${formatNumber(totalUSD)}`}
+                </p>
               </div>
 
-              {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-[#121212]/10 shrink-0">
-                <h3 className="text-lg font-semibold text-[#121212]">
-                  All Activity
-                </h3>
+              {/* Token Rows */}
+              <div className="space-y-3 mb-6">
+                {/* USDC */}
+                <div className="flex items-center gap-3">
+                  <Image
+                    src="/assets/usdc-icon.svg"
+                    alt="USDC"
+                    width={32}
+                    height={32}
+                  />
+                  <div className="flex-1">
+                    <p className="text-[#121212] font-medium">USDC</p>
+                    <p className="text-[#121212]/50 text-sm">
+                      {usdcLoading
+                        ? "..."
+                        : `${formatNumber(usdcBalance || 0)} USDC`}
+                    </p>
+                  </div>
+                  <p className="text-[#121212] font-medium">
+                    {usdcLoading ? "..." : `$${formatNumber(usdcBalance || 0)}`}
+                  </p>
+                </div>
+
+                {/* SOL */}
+                <div className="flex items-center gap-3">
+                  <Image
+                    src="/assets/sol-icon.svg"
+                    alt="SOL"
+                    width={32}
+                    height={32}
+                  />
+                  <div className="flex-1">
+                    <p className="text-[#121212] font-medium">SOL</p>
+                    <p className="text-[#121212]/50 text-sm">
+                      {solLoading
+                        ? "..."
+                        : `${(solBalance || 0).toFixed(4)} SOL`}
+                    </p>
+                  </div>
+                  <p className="text-[#121212] font-medium">
+                    {solLoading
+                      ? "..."
+                      : `$${formatNumber(solBalanceUSD || 0)}`}
+                  </p>
+                </div>
               </div>
 
-              {/* Activity List */}
-              <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
-                <div className="space-y-4">
+              {/* Stats */}
+              <div className="space-y-2 mb-6 border-t border-[#121212]/10 pt-4">
+                <div className="flex justify-between">
+                  <span className="text-[#121212] text-sm font-medium">Sent</span>
+                  <span className="text-[#121212] text-sm font-medium">
+                    {formatNumber(userData?.stats?.total_sent || 0)} USDC
+                  </span>
+                </div>
+                <div className="flex justify-between pl-3">
+                  <span className="text-[#121212]/50 text-xs">Direct</span>
+                  <span className="text-[#121212]/50 text-xs">
+                    {formatNumber(userData?.stats?.sent_direct || 0)} USDC
+                  </span>
+                </div>
+                <div className="flex justify-between pl-3">
+                  <span className="text-[#121212]/50 text-xs">Via Claim</span>
+                  <span className="text-[#121212]/50 text-xs">
+                    {formatNumber(userData?.stats?.sent_claim || 0)} USDC
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#121212] text-sm font-medium">Received</span>
+                  <span className="text-[#121212] text-sm font-medium">
+                    {formatNumber(userData?.stats?.total_received || 0)} USDC
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#121212] text-sm font-medium">Requested</span>
+                  <span className="text-[#121212] text-sm font-medium">
+                    {formatNumber(userData?.stats?.total_requested || 0)} USDC
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#121212] text-sm font-medium">Claimed</span>
+                  <span className="text-[#121212] text-sm font-medium">
+                    {formatNumber(userData?.stats?.total_claimed || 0)} USDC
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <motion.button
+                  onClick={() => setShowAddFunds(true)}
+                  whileTap={{ scale: 0.98 }}
+                  className="flex-1 h-10 bg-[#121212] rounded-full flex items-center justify-center text-[#fafafa] font-semibold shadow-[0_4px_12px_rgba(18,18,18,0.15)]"
+                >
+                  Add Funds
+                </motion.button>
+                {isXUser && (
+                  <motion.button
+                    onClick={() => exportWallet({ address: address || "" })}
+                    whileTap={{ scale: 0.98 }}
+                    className="flex-1 h-10 border border-[#121212]/20 rounded-full flex items-center justify-center text-[#121212] font-semibold hover:bg-[#121212]/5 transition-colors shadow-[0_4px_12px_rgba(18,18,18,0.15)]"
+                  >
+                    Export
+                  </motion.button>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === "activity" && (
+            <motion.div
+              key="activity"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full max-w-[320px] h-111.25 overflow-y-auto overflow-x-hidden"
+            >
+              {allActivities.length === 0 ? (
+                <p className="text-[#121212]/50 text-sm text-center py-8">
+                  No activity yet
+                </p>
+              ) : (
+                <div className="space-y-2">
                   {allActivities.map((activity) => (
                     <ActivityItem key={activity.id} activity={activity} />
                   ))}
                 </div>
-              </div>
+              )}
             </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>
+      </main>
+
+      {/* Add Funds Modal */}
+      {showAddFunds && address && (
+        <AddFundsModal
+          isOpen={showAddFunds}
+          onClose={() => setShowAddFunds(false)}
+          walletAddress={address}
+        />
+      )}
     </>
   );
 }

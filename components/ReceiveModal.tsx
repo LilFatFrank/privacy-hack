@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Modal } from "./Modal";
 import { Spinner } from "./Spinner";
 import { formatNumber } from "@/utils";
+import { useFee } from "@/hooks/useFee";
 
 interface ReceiveModalProps {
   isOpen: boolean;
@@ -16,10 +17,6 @@ interface ReceiveModalProps {
 }
 
 type ModalState = "input" | "loading" | "success" | "error";
-
-// Partner fee: ~0.71 USDC + 0.35% of amount
-const BASE_FEE = 0.71;
-const FEE_PERCENT = 0.0035; // 0.35%
 
 export function ReceiveModal({
   isOpen,
@@ -33,9 +30,10 @@ export function ReceiveModal({
   const [requestLink, setRequestLink] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const { baseFee, feePercent } = useFee();
 
   const numAmount = parseFloat(amount) || 0;
-  const partnerFee = BASE_FEE + numAmount * FEE_PERCENT;
+  const partnerFee = baseFee + numAmount * feePercent;
   const youReceive = numAmount - partnerFee;
 
   const handleProceed = async () => {
@@ -80,12 +78,7 @@ export function ReceiveModal({
 
   const handleCopyLink = async () => {
     try {
-      // Copy link with message if there is one
-      let textToCopy = requestLink;
-      if (message.trim()) {
-        textToCopy = `${message.trim()}\n${requestLink}`;
-      }
-      await navigator.clipboard.writeText(textToCopy);
+      await navigator.clipboard.writeText(requestLink);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
@@ -128,13 +121,21 @@ export function ReceiveModal({
               <label className="text-sm text-[#121212]/50 mb-2 block">
                 Add message (optional)
               </label>
-              <input
-                type="text"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder=""
-                className="w-full h-12 px-4 rounded-full border border-[#121212]/10 bg-transparent text-[#121212] outline-none focus:border-[#121212]/30 transition-colors"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={message}
+                  onChange={(e) => {
+                    if (e.target.value.length <= 50) setMessage(e.target.value);
+                  }}
+                  maxLength={50}
+                  placeholder=""
+                  className="w-full h-12 px-4 pr-16 rounded-full border border-[#121212]/10 bg-transparent text-[#121212] outline-none focus:border-[#121212]/30 transition-colors"
+                />
+                <span className={`absolute right-4 top-1/2 -translate-y-1/2 text-xs ${message.length >= 50 ? "text-red-500" : "text-[#121212]/30"}`}>
+                  {message.length}/50
+                </span>
+              </div>
             </div>
 
             {/* Amount Details */}
@@ -202,27 +203,17 @@ export function ReceiveModal({
 
             {/* Copy Link Button */}
             <motion.button
-              onClick={handleCopyLink}
-              whileTap={{ scale: 0.98 }}
-              className="w-full h-10 bg-[#121212] rounded-full flex items-center justify-center gap-2 text-[#fafafa] font-semibold shadow-[0_4px_12px_rgba(18,18,18,0.15)]"
+              onClick={copied ? undefined : handleCopyLink}
+              whileTap={copied ? {} : { scale: 0.98 }}
+              className={`w-full h-10 bg-[#121212] rounded-full flex items-center justify-center gap-2 text-[#fafafa] font-semibold shadow-[0_4px_12px_rgba(18,18,18,0.15)] ${copied ? "pointer-events-none" : ""}`}
             >
-              <motion.svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ type: "spring", delay: 0.2 }}
-              >
-                <path
-                  d="M5 12L10 17L19 8"
-                  stroke="#fafafa"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </motion.svg>
+              <Image
+                src={copied ? "/assets/success.svg" : "/assets/copy-icon.svg"}
+                alt=""
+                width={copied ? 16 : 16}
+                height={copied ? 8 : 16}
+                className={copied ? "" : "invert"}
+              />
               {copied ? "Copied!" : "Copy Request Link"}
             </motion.button>
           </motion.div>

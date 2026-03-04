@@ -46,3 +46,42 @@ CREATE POLICY "Service role full access" ON activity
   FOR ALL
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
+
+-- Users table
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  wallet_address TEXT NOT NULL UNIQUE,
+  connection_type TEXT NOT NULL CHECK (connection_type IN ('wallet', 'x')),
+  twitter_handle TEXT,
+  privy_user_id TEXT,
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE UNIQUE INDEX idx_users_twitter_handle ON users(twitter_handle) WHERE twitter_handle IS NOT NULL;
+CREATE INDEX idx_users_privy_user_id ON users(privy_user_id);
+
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public read" ON users
+  FOR SELECT
+  USING (true);
+
+CREATE POLICY "Service role full access" ON users
+  FOR ALL
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
+
+-- Twitter ID cache (handle → numeric ID mapping)
+CREATE TABLE twitter_id_cache (
+  twitter_handle TEXT PRIMARY KEY,
+  twitter_numeric_id TEXT NOT NULL,
+  created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+ALTER TABLE twitter_id_cache ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role full access" ON twitter_id_cache
+  FOR ALL
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');

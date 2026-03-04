@@ -7,6 +7,7 @@ import { Modal } from "./Modal";
 import { Spinner } from "./Spinner";
 import { formatNumber } from "@/utils";
 import { useSendClaimTransaction } from "@/hooks/useSendClaimTransaction";
+import { useFee } from "@/hooks/useFee";
 
 interface SendClaimModalProps {
   isOpen: boolean;
@@ -17,10 +18,6 @@ interface SendClaimModalProps {
 }
 
 type ModalState = "input" | "loading" | "success" | "error";
-
-// Partner fee: ~0.71 USDC + 0.35% of amount
-const BASE_FEE = 0.71;
-const FEE_PERCENT = 0.0035; // 0.35%
 
 export function SendClaimModal({
   isOpen,
@@ -35,9 +32,10 @@ export function SendClaimModal({
   const [passphrase, setPassphrase] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const { sendClaim } = useSendClaimTransaction();
+  const { baseFee, feePercent } = useFee();
 
   const numAmount = parseFloat(amount) || 0;
-  const partnerFee = BASE_FEE + numAmount * FEE_PERCENT;
+  const partnerFee = baseFee + numAmount * feePercent;
   const total = numAmount - partnerFee;
 
   const handleProceed = async () => {
@@ -71,14 +69,7 @@ export function SendClaimModal({
 
   const handleCopyLink = async () => {
     try {
-      // Build the text to copy: message (if any) + claim link + passphrase
-      let textToCopy = "";
-      if (message.trim()) {
-        textToCopy = `${message.trim()}\n`;
-      }
-      textToCopy += `${claimLink}\n\nPassphrase: ${passphrase}`;
-
-      await navigator.clipboard.writeText(textToCopy);
+      await navigator.clipboard.writeText(`${claimLink}\n\nPassphrase: ${passphrase}`);
     } catch (error) {
       console.error("Failed to copy:", error);
     }
@@ -119,13 +110,21 @@ export function SendClaimModal({
               <label className="text-sm text-[#121212]/50 mb-2 block">
                 Add message (optional)
               </label>
-              <input
-                type="text"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder=""
-                className="w-full h-12 px-4 rounded-full border border-[#121212]/10 bg-transparent text-[#121212] outline-none focus:border-[#121212]/30 transition-colors"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={message}
+                  onChange={(e) => {
+                    if (e.target.value.length <= 50) setMessage(e.target.value);
+                  }}
+                  maxLength={50}
+                  placeholder=""
+                  className="w-full h-12 px-4 pr-16 rounded-full border border-[#121212]/10 bg-transparent text-[#121212] outline-none focus:border-[#121212]/30 transition-colors"
+                />
+                <span className={`absolute right-4 top-1/2 -translate-y-1/2 text-xs ${message.length >= 50 ? "text-red-500" : "text-[#121212]/30"}`}>
+                  {message.length}/50
+                </span>
+              </div>
             </div>
 
             {/* Amount Details */}

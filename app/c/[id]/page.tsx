@@ -7,6 +7,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { formatNumber } from "@/utils";
 import { Spinner, ClaimPassphraseModal } from "@/components";
 import { useSessionSignature } from "@/hooks/useSessionSignature";
+import { useFee } from "@/hooks/useFee";
 
 interface ClaimData {
   id: string;
@@ -20,14 +21,11 @@ interface ClaimData {
 
 type PageState = "loading" | "ready" | "success" | "error" | "not_found" | "already_claimed" | "reclaiming" | "reclaimed";
 
-// Partner fee: ~0.71 USDC + 0.35% of amount
-const BASE_FEE = 0.71;
-const FEE_PERCENT = 0.0035;
-
 export default function ClaimPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { login, authenticated } = usePrivy();
   const { signature, address } = useSessionSignature();
+  const { baseFee, feePercent } = useFee();
   const [claimData, setClaimData] = useState<ClaimData | null>(null);
   const [pageState, setPageState] = useState<PageState>("loading");
   const [showPassphraseModal, setShowPassphraseModal] = useState(false);
@@ -203,7 +201,7 @@ export default function ClaimPage({ params }: { params: Promise<{ id: string }> 
 
   if (!claimData) return null;
 
-  const partnerFee = BASE_FEE + claimData.amount * FEE_PERCENT;
+  const partnerFee = baseFee + claimData.amount * feePercent;
   const youReceive = claimData.amount - partnerFee;
 
   return (

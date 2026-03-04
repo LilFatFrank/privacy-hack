@@ -8,6 +8,7 @@ import { useWallets } from "@privy-io/react-auth/solana";
 import { formatNumber } from "@/utils";
 import { Spinner } from "@/components";
 import { useSessionSignature } from "@/hooks/useSessionSignature";
+import { useFee } from "@/hooks/useFee";
 
 interface RequestData {
   id: string;
@@ -30,10 +31,6 @@ type PageState =
   | "cancelled"
   | "cancelling";
 
-// Partner fee: ~0.71 USDC + 0.35% of amount
-const BASE_FEE = 0.71;
-const FEE_PERCENT = 0.0035;
-
 export default function RequestPage({
   params,
 }: {
@@ -43,6 +40,7 @@ export default function RequestPage({
   const { login, authenticated } = usePrivy();
   const { wallets } = useWallets();
   const { signature, address } = useSessionSignature();
+  const { baseFee, feePercent } = useFee();
   const [requestData, setRequestData] = useState<RequestData | null>(null);
   const [pageState, setPageState] = useState<PageState>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -295,7 +293,7 @@ export default function RequestPage({
 
   if (!requestData) return null;
 
-  const partnerFee = BASE_FEE + requestData.amount * FEE_PERCENT;
+  const partnerFee = baseFee + requestData.amount * feePercent;
   const requestorReceives = requestData.amount - partnerFee;
 
   return (
