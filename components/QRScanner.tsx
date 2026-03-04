@@ -15,6 +15,7 @@ interface QRScannerProps {
 export function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
   const [error, setError] = useState<string | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const runningRef = useRef(false);
   const containerRef = useRef<string>("qr-reader-" + Math.random().toString(36).slice(2));
 
   useEffect(() => {
@@ -22,6 +23,18 @@ export function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
 
     let mounted = true;
     const scannerId = containerRef.current;
+
+    const stopScanner = async () => {
+      if (scannerRef.current && runningRef.current) {
+        runningRef.current = false;
+        try {
+          await scannerRef.current.stop();
+        } catch {
+          // already stopped
+        }
+      }
+      scannerRef.current = null;
+    };
 
     const startScanner = async () => {
       try {
@@ -42,7 +55,7 @@ export function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
 
             try {
               new PublicKey(text);
-              scanner.stop().catch(() => {});
+              stopScanner();
               onScan(text);
               onClose();
             } catch {
@@ -52,6 +65,7 @@ export function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
           },
           () => {} // ignore scan failures (no QR detected yet)
         );
+        runningRef.current = true;
       } catch (err: any) {
         if (mounted) {
           setError(err.message || "Failed to start camera");
@@ -65,10 +79,7 @@ export function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
     return () => {
       mounted = false;
       clearTimeout(timeout);
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-        scannerRef.current = null;
-      }
+      stopScanner();
     };
   }, [isOpen, onScan, onClose]);
 
