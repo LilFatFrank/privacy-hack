@@ -117,13 +117,21 @@ export function SendClaimModal({
               <label className="text-sm text-[#121212]/50 mb-2 block">
                 Add message (optional)
               </label>
-              <input
-                type="text"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder=""
-                className="w-full h-12 px-4 rounded-full border border-[#121212]/10 bg-transparent text-[#121212] outline-none focus:border-[#121212]/30 transition-colors"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={message}
+                  onChange={(e) => {
+                    if (e.target.value.length <= 50) setMessage(e.target.value);
+                  }}
+                  maxLength={50}
+                  placeholder=""
+                  className="w-full h-12 px-4 pr-16 rounded-full border border-[#121212]/10 bg-transparent text-[#121212] outline-none focus:border-[#121212]/30 transition-colors"
+                />
+                <span className={`absolute right-4 top-1/2 -translate-y-1/2 text-xs ${message.length >= 50 ? "text-red-500" : "text-[#121212]/30"}`}>
+                  {message.length}/50
+                </span>
+              </div>
             </div>
 
             {/* Amount Details */}

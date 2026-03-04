@@ -25,14 +25,29 @@ export default async function Image({ params }: { params: { id: string } }) {
     : null;
 
   // Fetch claim data
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   let amount = 0;
+  let message = "";
 
   try {
-    const res = await fetch(`${baseUrl}/api/send_claim/${params.id}`);
-    if (res.ok) {
-      const data = await res.json();
-      amount = data.amount || 0;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (supabaseUrl && supabaseKey) {
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/activity?id=eq.${params.id}&select=amount,message&limit=1`,
+        {
+          headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+        }
+      );
+      if (res.ok) {
+        const rows = await res.json();
+        if (rows.length > 0) {
+          amount = rows[0].amount || 0;
+          message = rows[0].message || "";
+        }
+      }
     }
   } catch (error) {
     console.error("Error fetching claim data for OG image:", error);
@@ -72,9 +87,10 @@ export default async function Image({ params }: { params: { id: string } }) {
         {/* Label */}
         <div
           style={{
-            fontSize: 32,
+            fontSize: 40,
             color: "#6b7280",
             marginBottom: 16,
+            opacity: 0.8,
           }}
         >
           Claim
@@ -84,6 +100,7 @@ export default async function Image({ params }: { params: { id: string } }) {
         <div
           style={{
             fontSize: 120,
+            marginTop: -32,
             fontWeight: 300,
             color: "#121212",
             letterSpacing: "-0.02em",
@@ -91,6 +108,20 @@ export default async function Image({ params }: { params: { id: string } }) {
         >
           ${amount.toLocaleString()}
         </div>
+
+        {message && (
+          <div
+            style={{
+              display: "flex",
+              fontSize: 24,
+              color: "#121212",
+              opacity: 0.5,
+              marginTop: 32,
+            }}
+          >
+            {message}
+          </div>
+        )}
       </div>
     ),
     {

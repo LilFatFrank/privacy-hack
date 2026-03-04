@@ -31,17 +31,32 @@ export default async function Image({
     : null;
 
   let amount = 0;
+  let message = "";
 
   try {
-    // Need absolute URL in edge runtime - relative URLs don't work
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://swish.cash";
-    const res = await fetch(`${baseUrl}/api/send_claim/${id}`);
-    if (res.ok) {
-      const data = await res.json();
-      amount = data.amount || 0;
+    // Query Supabase directly — avoids circular self-fetch that fails on serverless/Telegram
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (supabaseUrl && supabaseKey) {
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/activity?id=eq.${id}&select=amount,message&limit=1`,
+        {
+          headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+        }
+      );
+      if (res.ok) {
+        const rows = await res.json();
+        if (rows.length > 0) {
+          amount = rows[0].amount || 0;
+          message = rows[0].message || "";
+        }
+      }
     }
   } catch (error) {
-    console.error("Error fetching request data for OG image:", error);
+    console.error("Error fetching claim data for OG image:", error);
   }
 
   return new ImageResponse(
@@ -80,10 +95,10 @@ export default async function Image({
         <div
           style={{
             display: "flex",
-            fontSize: 16,
+            fontSize: 24,
             color: "#121212",
             marginBottom: 0,
-            opacity: 0.4,
+            opacity: 0.8,
           }}
         >
           Claim
@@ -93,12 +108,26 @@ export default async function Image({
             display: "flex",
             fontSize: 120,
             fontWeight: 300,
+            marginTop: -32,
             color: "#121212",
             letterSpacing: "-0.02em",
           }}
         >
           ${amount.toLocaleString()}
         </div>
+        {message && (
+          <div
+            style={{
+              display: "flex",
+              fontSize: 18,
+              color: "#121212",
+              opacity: 0.5,
+              marginTop: 24,
+            }}
+          >
+            {message}
+          </div>
+        )}
       </div>
     </div>,
     {
