@@ -78,12 +78,7 @@ export function ReceiveModal({
 
   const handleCopyLink = async () => {
     try {
-      // Copy link with message if there is one
-      let textToCopy = requestLink;
-      if (message.trim()) {
-        textToCopy = `${message.trim()}\n${requestLink}`;
-      }
-      await navigator.clipboard.writeText(textToCopy);
+      await navigator.clipboard.writeText(requestLink);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {

@@ -25,8 +25,11 @@ interface Activity {
 }
 
 interface Stats {
+  sent_direct: number;
+  sent_claim: number;
   total_sent: number;
   total_received: number;
+  total_requested: number;
   total_claimed: number;
 }
 
@@ -387,22 +390,38 @@ export default function ProfilePage() {
               {/* Stats */}
               <div className="space-y-2 mb-6 border-t border-[#121212]/10 pt-4">
                 <div className="flex justify-between">
-                  <span className="text-[#121212]/60 text-sm">Sends</span>
-                  <span className="text-[#121212] text-sm">
+                  <span className="text-[#121212] text-sm font-medium">Sent</span>
+                  <span className="text-[#121212] text-sm font-medium">
                     {formatNumber(userData?.stats?.total_sent || 0)} USDC
                   </span>
                 </div>
+                <div className="flex justify-between pl-3">
+                  <span className="text-[#121212]/50 text-xs">Direct</span>
+                  <span className="text-[#121212]/50 text-xs">
+                    {formatNumber(userData?.stats?.sent_direct || 0)} USDC
+                  </span>
+                </div>
+                <div className="flex justify-between pl-3">
+                  <span className="text-[#121212]/50 text-xs">Via Claim</span>
+                  <span className="text-[#121212]/50 text-xs">
+                    {formatNumber(userData?.stats?.sent_claim || 0)} USDC
+                  </span>
+                </div>
                 <div className="flex justify-between">
-                  <span className="text-[#121212]/60 text-sm">Requests</span>
-                  <span className="text-[#121212] text-sm">
+                  <span className="text-[#121212] text-sm font-medium">Received</span>
+                  <span className="text-[#121212] text-sm font-medium">
                     {formatNumber(userData?.stats?.total_received || 0)} USDC
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#121212]/60 text-sm">
-                    Sends via Claim
+                  <span className="text-[#121212] text-sm font-medium">Requested</span>
+                  <span className="text-[#121212] text-sm font-medium">
+                    {formatNumber(userData?.stats?.total_requested || 0)} USDC
                   </span>
-                  <span className="text-[#121212] text-sm">
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#121212] text-sm font-medium">Claimed</span>
+                  <span className="text-[#121212] text-sm font-medium">
                     {formatNumber(userData?.stats?.total_claimed || 0)} USDC
                   </span>
                 </div>
@@ -436,7 +455,7 @@ export default function ProfilePage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="w-full max-w-[320px] h-92.5 overflow-y-auto"
+              className="w-full max-w-[320px] h-111.25 overflow-y-auto overflow-x-hidden"
             >
               {allActivities.length === 0 ? (
                 <p className="text-[#121212]/50 text-sm text-center py-8">

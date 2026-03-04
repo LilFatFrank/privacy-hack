@@ -69,14 +69,7 @@ export function SendClaimModal({
 
   const handleCopyLink = async () => {
     try {
-      // Build the text to copy: message (if any) + claim link + passphrase
-      let textToCopy = "";
-      if (message.trim()) {
-        textToCopy = `${message.trim()}\n`;
-      }
-      textToCopy += `${claimLink}\n\nPassphrase: ${passphrase}`;
-
-      await navigator.clipboard.writeText(textToCopy);
+      await navigator.clipboard.writeText(`${claimLink}\n\nPassphrase: ${passphrase}`);
     } catch (error) {
       console.error("Failed to copy:", error);
     }

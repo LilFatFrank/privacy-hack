@@ -141,12 +141,15 @@ export async function getActivitiesForUser(
 
 // Get user stats (computed from activity)
 export async function getUserStats(userAddress: string): Promise<{
+  sent_direct: number;
+  sent_claim: number;
   total_sent: number;
   total_received: number;
+  total_requested: number;
   total_claimed: number;
 }> {
   // Get all settled activities where user is sender
-  const { data: sentData, error: sentError } = await supabase
+  const { data: sentData, error: sentError } = await getSupabase()
     .from("activity")
     .select("amount, type")
     .eq("sender_address", userAddress)
@@ -157,7 +160,7 @@ export async function getUserStats(userAddress: string): Promise<{
   }
 
   // Get all settled activities where user is receiver
-  const { data: receivedData, error: receivedError } = await supabase
+  const { data: receivedData, error: receivedError } = await getSupabase()
     .from("activity")
     .select("amount, type")
     .eq("receiver_address", userAddress)
@@ -167,19 +170,34 @@ export async function getUserStats(userAddress: string): Promise<{
     throw new Error(`Failed to get received stats: ${receivedError.message}`);
   }
 
-  const total_sent = (sentData || [])
+  const sent_direct = (sentData || [])
     .filter((a: Activity) => a.type === "send")
     .reduce((sum: number, a: Activity) => sum + a.amount, 0);
 
+  const sent_claim = (sentData || [])
+    .filter((a: Activity) => a.type === "send_claim")
+    .reduce((sum: number, a: Activity) => sum + a.amount, 0);
+
   const total_received = (receivedData || [])
-    .filter((a: Activity) => a.type === "send" || a.type === "request")
+    .filter((a: Activity) => a.type === "send")
+    .reduce((sum: number, a: Activity) => sum + a.amount, 0);
+
+  const total_requested = (receivedData || [])
+    .filter((a: Activity) => a.type === "request")
     .reduce((sum: number, a: Activity) => sum + a.amount, 0);
 
   const total_claimed = (receivedData || [])
     .filter((a: Activity) => a.type === "send_claim")
     .reduce((sum: number, a: Activity) => sum + a.amount, 0);
 
-  return { total_sent, total_received, total_claimed };
+  return {
+    sent_direct,
+    sent_claim,
+    total_sent: sent_direct + sent_claim,
+    total_received,
+    total_requested,
+    total_claimed,
+  };
 }
 
 // --- User operations ---
