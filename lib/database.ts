@@ -19,7 +19,7 @@ export type ActivityType = "send" | "request" | "send_claim";
 
 // Encrypted data can be either asymmetric (EncryptedPayload) or symmetric (PassphraseEncryptedPayload)
 export type ClaimEncryptedData = EncryptedPayload | PassphraseEncryptedPayload;
-export type ActivityStatus = "open" | "settled" | "cancelled";
+export type ActivityStatus = "open" | "processing" | "settled" | "cancelled";
 
 export interface Activity {
   id: string;
@@ -120,6 +120,31 @@ export async function updateActivityStatus(
   if (error) {
     throw new Error(`Failed to update activity: ${error.message}`);
   }
+}
+
+// Atomically claim an activity by setting status to "processing" only if it's currently "open".
+// Returns the activity if successfully claimed, null if already taken.
+export async function claimActivity(id: string): Promise<Activity | null> {
+  const { data, error } = await getSupabase()
+    .from("activity")
+    .update({
+      status: "processing",
+      updated_at: Date.now(),
+    })
+    .eq("id", id)
+    .eq("status", "open")
+    .select()
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") {
+      // No row matched — either doesn't exist or already claimed
+      return null;
+    }
+    throw new Error(`Failed to claim activity: ${error.message}`);
+  }
+
+  return data;
 }
 
 // Get all activities for a user

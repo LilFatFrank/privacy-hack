@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+.git
+.next
+node_modules
+cache
+tests
+*.test.ts
+*.test.js

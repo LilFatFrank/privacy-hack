@@ -43,8 +43,8 @@ import { TOKEN_MINTS, TokenType } from "../privacycash/tokens";
 import {
   createActivity,
   getActivity,
+  claimActivity,
   updateActivityStatus,
-  Activity,
 } from "../database";
 import {
   generatePassphrase,
@@ -52,8 +52,6 @@ import {
   decryptWithPassphrase,
   encryptWithSessionSignature,
   decryptWithSessionSignature,
-  serializeKeypair,
-  deserializeKeypair,
   PassphraseEncryptedPayload,
 } from "../crypto";
 import { getCircuitBasePathCached } from "../utils/circuitPath";
@@ -403,22 +401,24 @@ export async function claimWithPassphrase(
   console.log("Activity:", activityId);
   console.log("Receiver:", receiverAddress);
 
-  // Fetch activity
-  const activity = await getActivity(activityId);
-  if (!activity) {
+  // Fetch activity first to check type and data
+  const fetchedActivity = await getActivity(activityId);
+  if (!fetchedActivity) {
     throw new Error("Claim link not found");
   }
 
-  if (activity.type !== "send_claim") {
+  if (fetchedActivity.type !== "send_claim") {
     throw new Error("Not a claim link");
   }
 
-  if (activity.status !== "open") {
-    throw new Error("Claim link already used or cancelled");
+  if (!fetchedActivity.encrypted_for_receiver || !fetchedActivity.burner_address) {
+    throw new Error("Invalid claim link data");
   }
 
-  if (!activity.encrypted_for_receiver || !activity.burner_address) {
-    throw new Error("Invalid claim link data");
+  // Atomically claim — prevents race condition where two requests both pass the status check
+  const activity = await claimActivity(activityId);
+  if (!activity) {
+    throw new Error("Claim link already used or cancelled");
   }
 
   // Decrypt burner secret key with passphrase
@@ -429,6 +429,8 @@ export async function claimWithPassphrase(
       passphrase
     );
   } catch (error) {
+    // Wrong passphrase — release the lock
+    await updateActivityStatus(activityId, "open");
     throw new Error("Invalid passphrase");
   }
 
@@ -436,6 +438,7 @@ export async function claimWithPassphrase(
 
   // Verify burner address matches
   if (burnerKeypair.publicKey.toBase58() !== activity.burner_address) {
+    await updateActivityStatus(activityId, "open");
     throw new Error("Burner key mismatch - invalid passphrase");
   }
 
@@ -449,94 +452,100 @@ export async function claimWithPassphrase(
 
   const mintAddress = TOKEN_MINTS[token];
 
-  // Transfer from burner to receiver
-  console.log("Transferring from burner to receiver...");
-
-  const receiverPubkey = new PublicKey(receiverAddress);
-  const burnerTokenAccount = await getAssociatedTokenAddress(mintAddress, burnerKeypair.publicKey);
-  const receiverTokenAccount = await getAssociatedTokenAddress(mintAddress, receiverPubkey);
-
-  // Get actual balance in burner's token account (may be less than expected due to fees)
-  let actualBalance: bigint;
   try {
-    const burnerAccount = await getAccount(connection, burnerTokenAccount);
-    actualBalance = burnerAccount.amount;
-    console.log("Burner token balance:", actualBalance.toString(), "base units");
-  } catch (error) {
-    if (error instanceof TokenAccountNotFoundError) {
-      throw new Error("Burner has no token account - claim link may not be ready");
-    }
-    throw error;
-  }
+    // Transfer from burner to receiver
+    console.log("Transferring from burner to receiver...");
 
-  if (actualBalance === BigInt(0)) {
-    throw new Error("Burner has no tokens - claim link may not be ready");
-  }
+    const receiverPubkey = new PublicKey(receiverAddress);
+    const burnerTokenAccount = await getAssociatedTokenAddress(mintAddress, burnerKeypair.publicKey);
+    const receiverTokenAccount = await getAssociatedTokenAddress(mintAddress, receiverPubkey);
 
-  // Check if receiver has token account
-  const instructions = [];
-  try {
-    await getAccount(connection, receiverTokenAccount);
-  } catch (error) {
-    if (error instanceof TokenAccountNotFoundError) {
-      // Create ATA for receiver
-      instructions.push(
-        createAssociatedTokenAccountInstruction(
-          sponsorKeypair.publicKey, // payer
-          receiverTokenAccount,
-          receiverPubkey,
-          mintAddress
-        )
-      );
-    } else {
+    // Get actual balance in burner's token account (may be less than expected due to fees)
+    let actualBalance: bigint;
+    try {
+      const burnerAccount = await getAccount(connection, burnerTokenAccount);
+      actualBalance = burnerAccount.amount;
+      console.log("Burner token balance:", actualBalance.toString(), "base units");
+    } catch (error) {
+      if (error instanceof TokenAccountNotFoundError) {
+        throw new Error("Burner has no token account - claim link may not be ready");
+      }
       throw error;
     }
+
+    if (actualBalance === BigInt(0)) {
+      throw new Error("Burner has no tokens - claim link may not be ready");
+    }
+
+    // Check if receiver has token account
+    const instructions = [];
+    try {
+      await getAccount(connection, receiverTokenAccount);
+    } catch (error) {
+      if (error instanceof TokenAccountNotFoundError) {
+        // Create ATA for receiver
+        instructions.push(
+          createAssociatedTokenAccountInstruction(
+            sponsorKeypair.publicKey, // payer
+            receiverTokenAccount,
+            receiverPubkey,
+            mintAddress
+          )
+        );
+      } else {
+        throw error;
+      }
+    }
+
+    // Add transfer instruction (transfer full balance)
+    instructions.push(
+      createTransferInstruction(
+        burnerTokenAccount,
+        receiverTokenAccount,
+        burnerKeypair.publicKey,
+        actualBalance
+      )
+    );
+
+    // Build and send transaction
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+
+    const message = new TransactionMessage({
+      payerKey: sponsorKeypair.publicKey, // Sponsor pays gas
+      recentBlockhash: blockhash,
+      instructions,
+    }).compileToV0Message();
+
+    const tx = new VersionedTransaction(message);
+    tx.sign([sponsorKeypair, burnerKeypair]);
+
+    const signature = await connection.sendRawTransaction(tx.serialize());
+    await connection.confirmTransaction(
+      { signature, blockhash, lastValidBlockHeight },
+      "confirmed"
+    );
+
+    console.log("Claim tx:", signature);
+
+    // Update activity
+    await updateActivityStatus(activity.id, "settled", {
+      claim_tx_hash: signature,
+      receiver_address: receiverAddress,
+    });
+
+    console.log("Activity updated: settled");
+
+    return {
+      activityId,
+      claimTx: signature,
+      amountReceived: Number(actualBalance) / 1_000_000,
+      token,
+    };
+  } catch (error) {
+    // On-chain tx failed — release the lock so user can retry
+    await updateActivityStatus(activityId, "open");
+    throw error;
   }
-
-  // Add transfer instruction (transfer full balance)
-  instructions.push(
-    createTransferInstruction(
-      burnerTokenAccount,
-      receiverTokenAccount,
-      burnerKeypair.publicKey,
-      actualBalance
-    )
-  );
-
-  // Build and send transaction
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-
-  const message = new TransactionMessage({
-    payerKey: sponsorKeypair.publicKey, // Sponsor pays gas
-    recentBlockhash: blockhash,
-    instructions,
-  }).compileToV0Message();
-
-  const tx = new VersionedTransaction(message);
-  tx.sign([sponsorKeypair, burnerKeypair]);
-
-  const signature = await connection.sendRawTransaction(tx.serialize());
-  await connection.confirmTransaction(
-    { signature, blockhash, lastValidBlockHeight },
-    "confirmed"
-  );
-
-  console.log("Claim tx:", signature);
-
-  // Update activity
-  await updateActivityStatus(activity.id, "settled", {
-    claim_tx_hash: signature,
-    receiver_address: receiverAddress,
-  });
-
-  console.log("Activity updated: settled");
-
-  return {
-    activityId,
-    claimTx: signature,
-    amountReceived: Number(actualBalance) / 1_000_000,
-    token,
-  };
 }
 
 // ============================================================================
@@ -570,27 +579,29 @@ export async function reclaimWithSignature(
   console.log("Activity:", activityId);
   console.log("Sender:", senderPublicKey.toBase58());
 
-  // Fetch activity
-  const activity = await getActivity(activityId);
-  if (!activity) {
+  // Fetch activity first to check type and data
+  const fetchedActivity = await getActivity(activityId);
+  if (!fetchedActivity) {
     throw new Error("Claim link not found");
   }
 
-  if (activity.type !== "send_claim") {
+  if (fetchedActivity.type !== "send_claim") {
     throw new Error("Not a claim link");
   }
 
-  if (activity.status !== "open") {
-    throw new Error("Claim link already used or cancelled");
-  }
-
-  // Verify sender
-  if (activity.sender_address !== senderPublicKey.toBase58()) {
+  // Verify sender before claiming
+  if (fetchedActivity.sender_address !== senderPublicKey.toBase58()) {
     throw new Error("Not authorized to reclaim this link");
   }
 
-  if (!activity.encrypted_for_sender || !activity.burner_address) {
+  if (!fetchedActivity.encrypted_for_sender || !fetchedActivity.burner_address) {
     throw new Error("Invalid claim link data");
+  }
+
+  // Atomically claim — prevents race condition
+  const activity = await claimActivity(activityId);
+  if (!activity) {
+    throw new Error("Claim link already used or cancelled");
   }
 
   // Decrypt burner secret key with session signature
@@ -601,6 +612,7 @@ export async function reclaimWithSignature(
       sessionSignature
     );
   } catch (error) {
+    await updateActivityStatus(activityId, "open");
     throw new Error("Invalid session signature");
   }
 
@@ -608,6 +620,7 @@ export async function reclaimWithSignature(
 
   // Verify burner address matches
   if (burnerKeypair.publicKey.toBase58() !== activity.burner_address) {
+    await updateActivityStatus(activityId, "open");
     throw new Error("Burner key mismatch - invalid signature");
   }
 
@@ -621,89 +634,95 @@ export async function reclaimWithSignature(
 
   const mintAddress = TOKEN_MINTS[token];
 
-  // Transfer from burner back to sender
-  console.log("Transferring from burner to sender...");
-
-  const burnerTokenAccount = await getAssociatedTokenAddress(mintAddress, burnerKeypair.publicKey);
-  const senderTokenAccount = await getAssociatedTokenAddress(mintAddress, senderPublicKey);
-
-  // Get actual balance in burner's token account (may be less than expected due to fees)
-  let actualBalance: bigint;
   try {
-    const burnerAccount = await getAccount(connection, burnerTokenAccount);
-    actualBalance = burnerAccount.amount;
-    console.log("Burner token balance:", actualBalance.toString(), "base units");
-  } catch (error) {
-    if (error instanceof TokenAccountNotFoundError) {
-      throw new Error("Burner has no token account - claim link may not be ready");
-    }
-    throw error;
-  }
+    // Transfer from burner back to sender
+    console.log("Transferring from burner to sender...");
 
-  if (actualBalance === BigInt(0)) {
-    throw new Error("Burner has no tokens - claim link may not be ready");
-  }
+    const burnerTokenAccount = await getAssociatedTokenAddress(mintAddress, burnerKeypair.publicKey);
+    const senderTokenAccount = await getAssociatedTokenAddress(mintAddress, senderPublicKey);
 
-  // Check if sender has token account (they should, since they sent)
-  const instructions = [];
-  try {
-    await getAccount(connection, senderTokenAccount);
-  } catch (error) {
-    if (error instanceof TokenAccountNotFoundError) {
-      instructions.push(
-        createAssociatedTokenAccountInstruction(
-          sponsorKeypair.publicKey,
-          senderTokenAccount,
-          senderPublicKey,
-          mintAddress
-        )
-      );
-    } else {
+    // Get actual balance in burner's token account (may be less than expected due to fees)
+    let actualBalance: bigint;
+    try {
+      const burnerAccount = await getAccount(connection, burnerTokenAccount);
+      actualBalance = burnerAccount.amount;
+      console.log("Burner token balance:", actualBalance.toString(), "base units");
+    } catch (error) {
+      if (error instanceof TokenAccountNotFoundError) {
+        throw new Error("Burner has no token account - claim link may not be ready");
+      }
       throw error;
     }
+
+    if (actualBalance === BigInt(0)) {
+      throw new Error("Burner has no tokens - claim link may not be ready");
+    }
+
+    // Check if sender has token account (they should, since they sent)
+    const instructions = [];
+    try {
+      await getAccount(connection, senderTokenAccount);
+    } catch (error) {
+      if (error instanceof TokenAccountNotFoundError) {
+        instructions.push(
+          createAssociatedTokenAccountInstruction(
+            sponsorKeypair.publicKey,
+            senderTokenAccount,
+            senderPublicKey,
+            mintAddress
+          )
+        );
+      } else {
+        throw error;
+      }
+    }
+
+    // Add transfer instruction (transfer full balance)
+    instructions.push(
+      createTransferInstruction(
+        burnerTokenAccount,
+        senderTokenAccount,
+        burnerKeypair.publicKey,
+        actualBalance
+      )
+    );
+
+    // Build and send transaction
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+
+    const message = new TransactionMessage({
+      payerKey: sponsorKeypair.publicKey,
+      recentBlockhash: blockhash,
+      instructions,
+    }).compileToV0Message();
+
+    const tx = new VersionedTransaction(message);
+    tx.sign([sponsorKeypair, burnerKeypair]);
+
+    const signature = await connection.sendRawTransaction(tx.serialize());
+    await connection.confirmTransaction(
+      { signature, blockhash, lastValidBlockHeight },
+      "confirmed"
+    );
+
+    console.log("Reclaim tx:", signature);
+
+    // Update activity - cancelled since sender took it back
+    await updateActivityStatus(activity.id, "cancelled", {
+      claim_tx_hash: signature,
+    });
+
+    console.log("Activity updated: cancelled (reclaimed)");
+
+    return {
+      activityId,
+      reclaimTx: signature,
+      amountReclaimed: Number(actualBalance) / 1_000_000,
+      token,
+    };
+  } catch (error) {
+    // On-chain tx failed — release the lock so user can retry
+    await updateActivityStatus(activityId, "open");
+    throw error;
   }
-
-  // Add transfer instruction (transfer full balance)
-  instructions.push(
-    createTransferInstruction(
-      burnerTokenAccount,
-      senderTokenAccount,
-      burnerKeypair.publicKey,
-      actualBalance
-    )
-  );
-
-  // Build and send transaction
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-
-  const message = new TransactionMessage({
-    payerKey: sponsorKeypair.publicKey,
-    recentBlockhash: blockhash,
-    instructions,
-  }).compileToV0Message();
-
-  const tx = new VersionedTransaction(message);
-  tx.sign([sponsorKeypair, burnerKeypair]);
-
-  const signature = await connection.sendRawTransaction(tx.serialize());
-  await connection.confirmTransaction(
-    { signature, blockhash, lastValidBlockHeight },
-    "confirmed"
-  );
-
-  console.log("Reclaim tx:", signature);
-
-  // Update activity - cancelled since sender took it back
-  await updateActivityStatus(activity.id, "cancelled", {
-    claim_tx_hash: signature,
-  });
-
-  console.log("Activity updated: cancelled (reclaimed)");
-
-  return {
-    activityId,
-    reclaimTx: signature,
-    amountReclaimed: Number(actualBalance) / 1_000_000,
-    token,
-  };
 }
