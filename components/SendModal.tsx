@@ -187,7 +187,7 @@ export function SendModal({
                     alt=""
                     width={14}
                     height={14}
-                    className={recipientType === "wallet" ? "invert" : ""}
+
                   />
                   Wallet
                 </button>
@@ -290,13 +290,14 @@ export function SendModal({
                 {isResolvingX ? "Resolving..." : "Proceed"}
               </motion.button>
 
-              {/* Generate Claim Link */}
+              {/* Generate Claim Link - invisible for X sends */}
               <button
                 onClick={() => {
                   handleClose();
                   onSendViaClaim();
                 }}
-                className="w-full mt-4 text-[#121212]/70 text-sm underline underline-offset-4 decoration-dashed hover:text-[#121212] transition-colors"
+                disabled={recipientType === "x"}
+                className={`w-full mt-4 text-[#121212]/70 text-sm underline underline-offset-4 decoration-dashed hover:text-[#121212] transition-colors ${recipientType === "x" ? "invisible pointer-events-none" : ""}`}
               >
                 Generate a claim link
               </button>

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
+import { useExportWallet } from "@privy-io/react-auth/solana";
 import { formatNumber } from "@/utils";
 import { Spinner, AddFundsModal } from "@/components";
 import { useSessionSignature } from "@/hooks/useSessionSignature";
@@ -44,7 +45,8 @@ const STATUS_COLORS = {
 type TabType = "wallet" | "activity";
 
 export default function ProfilePage() {
-  const { login, logout, authenticated, user, exportWallet } = usePrivy();
+  const { login, logout, authenticated, user } = usePrivy();
+  const { exportWallet } = useExportWallet();
   const { address, walletAddress } = useSessionSignature();
   const { balance: usdcBalance, isLoading: usdcLoading } =
     useUSDCBalance(walletAddress);
@@ -129,15 +131,6 @@ export default function ProfilePage() {
     } catch {}
   };
 
-  const handleShare = async () => {
-    if (!address) return;
-    try {
-      await navigator.share({ text: address });
-    } catch {
-      handleCopyAddress();
-    }
-  };
-
   const getActivityLabel = (activity: Activity) => {
     const isSender =
       activity.sender_address?.toLowerCase() === address?.toLowerCase();
@@ -196,9 +189,7 @@ export default function ProfilePage() {
           className="mt-0.5 invert"
         />
         <div className="flex-1 min-w-0">
-          <p className="text-[#121212] text-sm">
-            {getActivityLabel(activity)}
-          </p>
+          <p className="text-[#121212] text-sm">{getActivityLabel(activity)}</p>
           <p
             className="text-xs font-normal uppercase"
             style={{ color: STATUS_COLORS[activity.status] }}
@@ -237,15 +228,6 @@ export default function ProfilePage() {
         >
           Connect Wallet
         </motion.button>
-        <div className="mt-2 flex items-center gap-2 text-[#121212]/50 text-sm">
-          <span>Powered by</span>
-          <Image
-            src="/assets/privacy-cash-logo.svg"
-            alt="Privacy Cash"
-            width={20}
-            height={20}
-          />
-        </div>
       </main>
     );
   }
@@ -268,54 +250,46 @@ export default function ProfilePage() {
       <main className="flex flex-col items-center p-4 w-full">
         {/* Header: Address + X handle */}
         <div className="w-full max-w-[320px] mb-6">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-2 w-full">
             <span className="text-[#121212] font-medium text-lg">
               {address ? formatAddr(address) : ""}
             </span>
-            <button
-              onClick={handleCopyAddress}
-              className="p-1 hover:bg-[#121212]/5 rounded-full transition-colors"
-            >
-              <Image
-                src="/assets/copy-icon.svg"
-                alt="Copy"
-                width={16}
-                height={16}
-              />
-            </button>
-            <button
-              onClick={handleShare}
-              className="p-1 hover:bg-[#121212]/5 rounded-full transition-colors"
-            >
-              <Image
-                src="/assets/send.svg"
-                alt="Share"
-                width={16}
-                height={16}
-                className="invert"
-              />
-            </button>
-            {copied && (
-              <motion.span
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="text-[#008834] text-xs"
+            <div className="flex items-center gap-2">
+              <button
+                onClick={copied ? undefined : handleCopyAddress}
+                className={`p-1 rounded-full transition-colors ${copied ? "pointer-events-none" : "hover:bg-[#121212]/5"}`}
               >
-                Copied!
-              </motion.span>
-            )}
+                <Image
+                  src={copied ? "/assets/success-alt.svg" : "/assets/copy-icon.svg"}
+                  alt=""
+                  width={copied ? 16 : 16}
+                  height={copied ? 8 : 16}
+                />
+              </button>
+              <button
+                onClick={logout}
+                className="p-1 hover:bg-[#121212]/5 rounded-full transition-colors"
+              >
+                <Image
+                  src="/assets/logout-icon.svg"
+                  alt="Logout"
+                  width={16}
+                  height={16}
+                />
+              </button>
+            </div>
           </div>
           {isXUser && twitterHandle && (
             <div className="flex items-center gap-1.5 mt-1">
-              <Image
-                src="/assets/x-icon.svg"
-                alt="X"
-                width={14}
-                height={14}
-              />
-              <span className="text-[#121212]/60 text-sm">
+              <Image src="/assets/x-icon.svg" alt="X" width={14} height={14} />
+              <a
+                className="text-[#121212]/60 text-sm decoration-dashed underline underline-offset-4"
+                href={`https://x.com/${twitterHandle}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 @{twitterHandle}
-              </span>
+              </a>
             </div>
           )}
         </div>
@@ -356,7 +330,7 @@ export default function ProfilePage() {
               {/* Total Balance */}
               <div className="text-center mb-6">
                 <p className="text-[#121212]/50 text-sm mb-1">Total Balance</p>
-                <p className="text-4xl font-light text-[#121212]">
+                <p className="text-4xl font-normal text-[#121212]">
                   {usdcLoading || solLoading
                     ? "..."
                     : `$${formatNumber(totalUSD)}`}
@@ -382,9 +356,7 @@ export default function ProfilePage() {
                     </p>
                   </div>
                   <p className="text-[#121212] font-medium">
-                    {usdcLoading
-                      ? "..."
-                      : `$${formatNumber(usdcBalance || 0)}`}
+                    {usdcLoading ? "..." : `$${formatNumber(usdcBalance || 0)}`}
                   </p>
                 </div>
 
@@ -447,9 +419,9 @@ export default function ProfilePage() {
                 </motion.button>
                 {isXUser && (
                   <motion.button
-                    onClick={() => exportWallet()}
+                    onClick={() => exportWallet({ address: address || "" })}
                     whileTap={{ scale: 0.98 }}
-                    className="flex-1 h-10 border border-[#121212]/20 rounded-full flex items-center justify-center text-[#121212] font-semibold hover:bg-[#121212]/5 transition-colors"
+                    className="flex-1 h-10 border border-[#121212]/20 rounded-full flex items-center justify-center text-[#121212] font-semibold hover:bg-[#121212]/5 transition-colors shadow-[0_4px_12px_rgba(18,18,18,0.15)]"
                   >
                     Export
                   </motion.button>
@@ -464,7 +436,7 @@ export default function ProfilePage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="w-full max-w-[320px]"
+              className="w-full max-w-[320px] h-92.5 overflow-y-auto"
             >
               {allActivities.length === 0 ? (
                 <p className="text-[#121212]/50 text-sm text-center py-8">
@@ -480,32 +452,6 @@ export default function ProfilePage() {
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Disconnect */}
-        <motion.button
-          onClick={logout}
-          whileTap={{ scale: 0.98 }}
-          className="w-full max-w-[320px] mt-8 h-10 border border-[#121212]/20 rounded-full flex items-center justify-center gap-2 text-[#121212] font-semibold hover:bg-[#121212]/5 transition-colors"
-        >
-          <Image
-            src="/assets/logout-icon.svg"
-            alt=""
-            width={16}
-            height={16}
-          />
-          Disconnect
-        </motion.button>
-
-        {/* Powered by */}
-        <div className="mt-2 flex items-center gap-2 text-[#121212]/50 text-sm">
-          <span>Powered by</span>
-          <Image
-            src="/assets/privacy-cash-logo.svg"
-            alt="Privacy Cash"
-            width={20}
-            height={20}
-          />
-        </div>
       </main>
 
       {/* Add Funds Modal */}

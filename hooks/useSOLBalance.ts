@@ -35,20 +35,16 @@ export function useSOLBalance(walletAddress: string | null): UseSOLBalanceResult
       const pubkey = new PublicKey(walletAddress);
 
       // Fetch SOL balance and price in parallel
-      const [lamports, priceRes] = await Promise.all([
+      const [lamports, feeRes] = await Promise.all([
         connection.getBalance(pubkey),
-        fetch(
-          "https://api.jup.ag/price/v2?ids=So11111111111111111111111111111111111111112"
-        ).then((r) => r.json()).catch(() => null),
+        fetch("/api/fee").then((r) => r.json()).catch(() => null),
       ]);
 
       const solBalance = lamports / LAMPORTS_PER_SOL;
       setBalance(solBalance);
 
-      const price =
-        priceRes?.data?.["So11111111111111111111111111111111111111112"]?.price;
-      if (price) {
-        setSolPrice(parseFloat(price));
+      if (feeRes?.solPrice) {
+        setSolPrice(feeRes.solPrice);
       }
     } catch (err: any) {
       console.error("Failed to fetch SOL balance:", err);

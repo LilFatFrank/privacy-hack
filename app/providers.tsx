@@ -34,7 +34,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       appId={privyAppId}
       config={{
         appearance: {
-          accentColor: "#6A6FF5",
+          accentColor: "#000000",
           theme: "#FFFFFF",
           showWalletLoginFirst: false,
           logo: "/assets/logo.svg",

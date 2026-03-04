@@ -200,27 +200,17 @@ export function ReceiveModal({
 
             {/* Copy Link Button */}
             <motion.button
-              onClick={handleCopyLink}
-              whileTap={{ scale: 0.98 }}
-              className="w-full h-10 bg-[#121212] rounded-full flex items-center justify-center gap-2 text-[#fafafa] font-semibold shadow-[0_4px_12px_rgba(18,18,18,0.15)]"
+              onClick={copied ? undefined : handleCopyLink}
+              whileTap={copied ? {} : { scale: 0.98 }}
+              className={`w-full h-10 bg-[#121212] rounded-full flex items-center justify-center gap-2 text-[#fafafa] font-semibold shadow-[0_4px_12px_rgba(18,18,18,0.15)] ${copied ? "pointer-events-none" : ""}`}
             >
-              <motion.svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ type: "spring", delay: 0.2 }}
-              >
-                <path
-                  d="M5 12L10 17L19 8"
-                  stroke="#fafafa"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </motion.svg>
+              <Image
+                src={copied ? "/assets/success.svg" : "/assets/copy-icon.svg"}
+                alt=""
+                width={copied ? 16 : 16}
+                height={copied ? 8 : 16}
+                className={copied ? "" : "invert"}
+              />
               {copied ? "Copied!" : "Copy Request Link"}
             </motion.button>
           </motion.div>

@@ -14,8 +14,11 @@ export function useUserRegistration() {
 
     // For Twitter users, prefer the embedded wallet over external wallets
     const isTwitterUser = !!user.twitter;
-    const embeddedWallet = wallets.find((w) => w.walletClientType === "privy");
-    const wallet = isTwitterUser && embeddedWallet ? embeddedWallet : wallets[0];
+    const userWalletAddress = user?.wallet?.address;
+    const embeddedWallet = wallets.find(
+      (w) => (w as any).walletClientType === "privy" || (userWalletAddress && w.address === userWalletAddress)
+    );
+    const wallet = isTwitterUser ? embeddedWallet || null : wallets[0] || null;
     const walletAddress = wallet?.address || user?.wallet?.address;
     if (!walletAddress) return;
 

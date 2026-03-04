@@ -20,7 +20,7 @@ type ModalType = "send" | "receive" | "sendClaim" | null;
 
 export default function Home() {
   const { login, authenticated, logout, user } = usePrivy();
-  const { walletAddress, signature, address } = useSessionSignature();
+  const { walletAddress, signature, address, needsSignature, error: signError, requestSignature } = useSessionSignature();
   useUserRegistration();
   const {
     balance,
@@ -32,8 +32,11 @@ export default function Home() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [copied, setCopied] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [signModalShake, setSignModalShake] = useState(false);
 
   const isXUser = !!user?.twitter;
+  // Show mandatory sign-in modal for Twitter users who haven't signed yet
+  const showSignModal = isXUser && authenticated && !signature && !!walletAddress;
   const twitterHandle = user?.twitter?.username;
 
   const numAmount = parseFloat(amount) || 0;
@@ -144,9 +147,18 @@ export default function Home() {
           <div className="relative" ref={dropdownRef}>
             <button
               onClick={handleBalanceClick}
-              className="mt-2 text-sm text-[#121212]/50 hover:text-[#121212]/70 transition-colors"
+              className="mt-2 flex items-center gap-1.5 text-sm text-[#121212]/50 hover:text-[#121212]/70 transition-colors"
             >
               {getBalanceDisplay()}
+              {authenticated && (
+                <Image
+                  src="/assets/chevron-down-icon.svg"
+                  alt=""
+                  width={10}
+                  height={10}
+                  className={`transition-transform ${showDropdown ? "rotate-180" : ""}`}
+                />
+              )}
             </button>
 
             <AnimatePresence>
@@ -160,8 +172,8 @@ export default function Home() {
                 >
                   {/* Wallet Address */}
                   <button
-                    onClick={handleCopyAddress}
-                    className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-[#121212]/5 transition-colors"
+                    onClick={copied ? undefined : handleCopyAddress}
+                    className={`w-full flex items-center gap-2.5 px-4 py-3 transition-colors ${copied ? "pointer-events-none" : "hover:bg-[#121212]/5"}`}
                   >
                     <Image
                       src="/assets/sol-icon.svg"
@@ -169,23 +181,25 @@ export default function Home() {
                       width={16}
                       height={16}
                     />
-                    <span className="text-[#121212] text-sm flex-1 text-left">
+                    <span className="text-[#121212] text-md flex-1 text-left">
                       {address ? formatAddr(address) : ""}
                     </span>
                     <Image
-                      src="/assets/copy-icon.svg"
-                      alt="Copy"
-                      width={14}
-                      height={14}
+                      src={copied ? "/assets/success-alt.svg" : "/assets/copy-icon.svg"}
+                      alt=""
+                      width={copied ? 16 : 14}
+                      height={copied ? 8 : 14}
                     />
-                    {copied && (
-                      <span className="text-[#008834] text-xs">Copied</span>
-                    )}
                   </button>
 
                   {/* X Handle */}
                   {isXUser && twitterHandle && (
-                    <div className="w-full flex items-center gap-2.5 px-4 py-3">
+                    <a
+                      href={`https://x.com/${twitterHandle}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-[#121212]/5 transition-colors"
+                    >
                       <Image
                         src="/assets/x-icon.svg"
                         alt=""
@@ -195,11 +209,8 @@ export default function Home() {
                       <span className="text-[#121212]/60 text-sm">
                         @{twitterHandle}
                       </span>
-                    </div>
+                    </a>
                   )}
-
-                  {/* Divider */}
-                  <div className="border-t border-[#121212]/10" />
 
                   {/* Logout */}
                   <button
@@ -299,6 +310,69 @@ export default function Home() {
           senderPublicKey={address}
         />
       )}
+
+      {/* Mandatory sign-in modal for Twitter users */}
+      <AnimatePresence>
+        {showSignModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 bg-black/40 z-50 backdrop-blur-xs"
+              onClick={() => {
+                setSignModalShake(true);
+                setTimeout(() => setSignModalShake(false), 500);
+              }}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: "100%" }}
+              animate={{
+                opacity: 1,
+                y: 0,
+                x: signModalShake ? [0, -6, 6, -6, 6, 0] : 0,
+              }}
+              exit={{ opacity: 0, y: "100%" }}
+              transition={
+                signModalShake
+                  ? { x: { duration: 0.4 }, type: "spring", damping: 25, stiffness: 300 }
+                  : { type: "spring", damping: 25, stiffness: 300 }
+              }
+              className="fixed z-50 bg-[#fafafa] rounded-t-3xl md:rounded-3xl w-full max-w-[430px] bottom-0 left-1/2 -translate-x-1/2 md:bottom-auto md:top-1/2 md:-translate-y-1/2"
+            >
+              <div className="flex justify-center pt-3 pb-2 md:hidden">
+                <div className="w-10 h-1 bg-[#121212]/20 rounded-full" />
+              </div>
+              <div className="px-6 pb-8 pt-4 md:pt-6 flex flex-col items-center">
+                <Image
+                  src="/assets/logo.svg"
+                  alt="Privacy Money"
+                  width={48}
+                  height={48}
+                  className="mb-4"
+                />
+                <h2 className="text-lg font-semibold text-[#121212] mb-2">
+                  Sign In Required
+                </h2>
+                <p className="text-sm text-[#121212]/60 text-center mb-6">
+                  Please sign the message to verify your wallet and continue using Swish.
+                </p>
+                <motion.button
+                  onClick={requestSignature}
+                  whileTap={{ scale: 0.98 }}
+                  className="w-full h-10 bg-[#121212] rounded-full flex items-center justify-center text-[#fafafa] font-semibold shadow-[0_4px_12px_rgba(18,18,18,0.15)]"
+                >
+                  Sign In
+                </motion.button>
+                {signError && (
+                  <p className="text-red-500 text-xs mt-3 text-center">{signError}</p>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </>
   );
 }

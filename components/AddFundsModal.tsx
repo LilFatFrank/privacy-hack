@@ -48,30 +48,20 @@ export function AddFundsModal({
 
         {/* Address */}
         <button
-          onClick={handleCopy}
-          className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#121212]/5 hover:bg-[#121212]/10 transition-colors mb-3 max-w-full"
+          onClick={copied ? undefined : handleCopy}
+          className={`flex items-center gap-2 px-4 py-2 rounded-full bg-[#121212]/5 transition-colors mb-3 max-w-full ${copied ? "pointer-events-none" : "hover:bg-[#121212]/10"}`}
         >
           <span className="text-[#121212] text-sm font-mono truncate">
             {walletAddress}
           </span>
           <Image
-            src="/assets/copy-icon.svg"
-            alt="Copy"
-            width={16}
-            height={16}
+            src={copied ? "/assets/success-alt.svg" : "/assets/copy-icon.svg"}
+            alt=""
+            width={copied ? 16 : 16}
+            height={copied ? 8 : 16}
             className="shrink-0"
           />
         </button>
-
-        {copied && (
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-[#008834] text-xs mb-3"
-          >
-            Copied!
-          </motion.p>
-        )}
 
         <p className="text-[#121212]/50 text-sm text-center">
           Send SOL or USDC to this address
