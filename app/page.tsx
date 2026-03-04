@@ -147,7 +147,7 @@ export default function Home() {
           <div className="relative" ref={dropdownRef}>
             <button
               onClick={handleBalanceClick}
-              className="mt-2 flex items-center gap-1.5 text-sm text-[#121212]/50 hover:text-[#121212]/70 transition-colors"
+              className={`mt-2 flex items-center gap-1.5 text-sm text-[#121212]/50 hover:text-[#121212]/70 transition-colors ${!authenticated ? "underline underline-offset-4 decoration-dashed" : ""}`}
             >
               {getBalanceDisplay()}
               {authenticated && (
