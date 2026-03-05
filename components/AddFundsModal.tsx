@@ -33,7 +33,7 @@ export function AddFundsModal({
     <Modal isOpen={isOpen} onClose={onClose}>
       <div className="flex flex-col items-center">
         <h2 className="text-2xl font-semibold text-[#121212] mb-6">
-          Add Funds
+          Deposit
         </h2>
 
         {/* QR Code */}

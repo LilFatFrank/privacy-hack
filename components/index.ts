@@ -10,3 +10,4 @@ export { SendClaimModal } from "./SendClaimModal";
 export { ClaimPassphraseModal } from "./ClaimPassphraseModal";
 export { QRScanner } from "./QRScanner";
 export { AddFundsModal } from "./AddFundsModal";
+export { WithdrawModal } from "./WithdrawModal";
