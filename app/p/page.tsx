@@ -7,7 +7,7 @@ import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
 import { useExportWallet } from "@privy-io/react-auth/solana";
 import { formatNumber } from "@/utils";
-import { Spinner, AddFundsModal } from "@/components";
+import { Spinner, AddFundsModal, WithdrawModal } from "@/components";
 import { useSessionSignature } from "@/hooks/useSessionSignature";
 import { useUSDCBalance } from "@/hooks/useUSDCBalance";
 import { useSOLBalance } from "@/hooks/useSOLBalance";
@@ -50,7 +50,7 @@ type TabType = "wallet" | "activity";
 export default function ProfilePage() {
   const { login, logout, authenticated, user } = usePrivy();
   const { exportWallet } = useExportWallet();
-  const { address, walletAddress } = useSessionSignature();
+  const { address, walletAddress, signature } = useSessionSignature();
   const { balance: usdcBalance, isLoading: usdcLoading } =
     useUSDCBalance(walletAddress);
   const {
@@ -63,6 +63,7 @@ export default function ProfilePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>("wallet");
   const [showAddFunds, setShowAddFunds] = useState(false);
+  const [showWithdraw, setShowWithdraw] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const isXUser = !!user?.twitter;
@@ -263,7 +264,9 @@ export default function ProfilePage() {
                 className={`p-1 rounded-full transition-colors ${copied ? "pointer-events-none" : "hover:bg-[#121212]/5"}`}
               >
                 <Image
-                  src={copied ? "/assets/success-alt.svg" : "/assets/copy-icon.svg"}
+                  src={
+                    copied ? "/assets/success-alt.svg" : "/assets/copy-icon.svg"
+                  }
                   alt=""
                   width={copied ? 16 : 16}
                   height={copied ? 8 : 16}
@@ -390,7 +393,9 @@ export default function ProfilePage() {
               {/* Stats */}
               <div className="space-y-2 mb-6 border-t border-[#121212]/10 pt-4">
                 <div className="flex justify-between">
-                  <span className="text-[#121212] text-sm font-medium">Sent</span>
+                  <span className="text-[#121212] text-sm font-medium">
+                    Sent
+                  </span>
                   <span className="text-[#121212] text-sm font-medium">
                     {formatNumber(userData?.stats?.total_sent || 0)} USDC
                   </span>
@@ -408,19 +413,25 @@ export default function ProfilePage() {
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#121212] text-sm font-medium">Received</span>
+                  <span className="text-[#121212] text-sm font-medium">
+                    Received
+                  </span>
                   <span className="text-[#121212] text-sm font-medium">
                     {formatNumber(userData?.stats?.total_received || 0)} USDC
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#121212] text-sm font-medium">Requested</span>
+                  <span className="text-[#121212] text-sm font-medium">
+                    Requested
+                  </span>
                   <span className="text-[#121212] text-sm font-medium">
                     {formatNumber(userData?.stats?.total_requested || 0)} USDC
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#121212] text-sm font-medium">Claimed</span>
+                  <span className="text-[#121212] text-sm font-medium">
+                    Claimed
+                  </span>
                   <span className="text-[#121212] text-sm font-medium">
                     {formatNumber(userData?.stats?.total_claimed || 0)} USDC
                   </span>
@@ -434,7 +445,14 @@ export default function ProfilePage() {
                   whileTap={{ scale: 0.98 }}
                   className="flex-1 h-10 bg-[#121212] rounded-full flex items-center justify-center text-[#fafafa] font-semibold shadow-[0_4px_12px_rgba(18,18,18,0.15)]"
                 >
-                  Add Funds
+                  Deposit
+                </motion.button>
+                <motion.button
+                  onClick={() => setShowWithdraw(true)}
+                  whileTap={{ scale: 0.98 }}
+                  className="flex-1 h-10 bg-[#121212] rounded-full flex items-center justify-center text-[#fafafa] font-semibold shadow-[0_4px_12px_rgba(18,18,18,0.15)]"
+                >
+                  Withdraw
                 </motion.button>
                 {isXUser && (
                   <motion.button
@@ -479,6 +497,17 @@ export default function ProfilePage() {
           isOpen={showAddFunds}
           onClose={() => setShowAddFunds(false)}
           walletAddress={address}
+        />
+      )}
+
+      {/* Withdraw Modal */}
+      {showWithdraw && address && (
+        <WithdrawModal
+          isOpen={showWithdraw}
+          onClose={() => setShowWithdraw(false)}
+          usdcBalance={usdcBalance || 0}
+          signature={signature}
+          senderPublicKey={address}
         />
       )}
     </>
