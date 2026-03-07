@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "cash.swish.app",
+      "sha256_cert_fingerprints": [
+        "8F:E0:6F:10:04:F5:21:D9:B3:75:37:02:23:EF:C9:D0:57:1F:3E:FC:CB:1A:CB:3D:44:1D:AE:A4:C6:5C:B9:3F"
+      ]
+    }
+  }
+]
