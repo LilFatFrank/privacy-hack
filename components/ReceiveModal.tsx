@@ -5,8 +5,10 @@ import { motion, AnimatePresence } from "motion/react";
 import Image from "next/image";
 import { Modal } from "./Modal";
 import { Spinner } from "./Spinner";
+import { SuccessParticles } from "./SuccessParticles";
 import { formatNumber } from "@/utils";
 import { useFee } from "@/hooks/useFee";
+import { fadeUp, scaleIn } from "@/lib/motionVariants";
 
 interface ReceiveModalProps {
   isOpen: boolean;
@@ -112,9 +114,10 @@ export function ReceiveModal({
         {state === "input" && (
           <motion.div
             key="input"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            variants={fadeUp}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
           >
             {/* Message Input */}
             <div className="mb-6">
@@ -168,9 +171,10 @@ export function ReceiveModal({
         {state === "loading" && (
           <motion.div
             key="loading"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            variants={scaleIn}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
             className="flex flex-col items-center justify-center py-12"
           >
             <Spinner size={48} color="#121212" />
@@ -181,10 +185,13 @@ export function ReceiveModal({
         {state === "success" && (
           <motion.div
             key="success"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            variants={scaleIn}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className="relative"
           >
+            <SuccessParticles />
             {/* Success Details */}
             <div className="space-y-3 mb-8">
               <div className="flex justify-between">
@@ -222,9 +229,10 @@ export function ReceiveModal({
         {state === "error" && (
           <motion.div
             key="error"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            variants={fadeUp}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
             className="flex flex-col items-center justify-center py-8"
           >
             <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">

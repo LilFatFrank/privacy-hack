@@ -7,9 +7,11 @@ import { PublicKey } from "@solana/web3.js";
 import { Modal } from "./Modal";
 import { Spinner } from "./Spinner";
 import { QRScanner } from "./QRScanner";
+import { SuccessParticles } from "./SuccessParticles";
 import { formatNumber } from "@/utils";
 import { useSendTransaction } from "@/hooks/useSendTransaction";
 import { useFee } from "@/hooks/useFee";
+import { fadeUp, scaleIn } from "@/lib/motionVariants";
 
 interface SendModalProps {
   isOpen: boolean;
@@ -168,9 +170,10 @@ export function SendModal({
           {state === "input" && (
             <motion.div
               key="input"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              variants={fadeUp}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
             >
               {/* Recipient Type Toggle */}
               <div className="flex mb-4 bg-[#121212]/5 rounded-full p-1">
@@ -307,9 +310,10 @@ export function SendModal({
           {state === "loading" && (
             <motion.div
               key="loading"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              variants={scaleIn}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
               className="flex flex-col items-center justify-center py-12"
             >
               <Spinner size={48} color="#121212" />
@@ -322,10 +326,13 @@ export function SendModal({
           {state === "success" && (
             <motion.div
               key="success"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              variants={scaleIn}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              className="relative"
             >
+              <SuccessParticles />
               {/* Success Details */}
               <div className="space-y-2 mb-8">
                 <div className="flex justify-between">
@@ -373,9 +380,10 @@ export function SendModal({
           {state === "error" && (
             <motion.div
               key="error"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              variants={fadeUp}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
               className="flex flex-col items-center justify-center py-8"
             >
               <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">

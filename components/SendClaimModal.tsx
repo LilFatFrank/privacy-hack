@@ -5,9 +5,11 @@ import { motion, AnimatePresence } from "motion/react";
 import Image from "next/image";
 import { Modal } from "./Modal";
 import { Spinner } from "./Spinner";
+import { SuccessParticles } from "./SuccessParticles";
 import { formatNumber } from "@/utils";
 import { useSendClaimTransaction } from "@/hooks/useSendClaimTransaction";
 import { useFee } from "@/hooks/useFee";
+import { fadeUp, scaleIn } from "@/lib/motionVariants";
 
 interface SendClaimModalProps {
   isOpen: boolean;
@@ -105,9 +107,10 @@ export function SendClaimModal({
         {state === "input" && (
           <motion.div
             key="input"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            variants={fadeUp}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
           >
             {/* Message Input */}
             <div className="mb-6">
@@ -161,9 +164,10 @@ export function SendClaimModal({
         {state === "loading" && (
           <motion.div
             key="loading"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            variants={scaleIn}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
             className="flex flex-col items-center justify-center py-12"
           >
             <Spinner size={48} color="#121212" />
@@ -174,10 +178,13 @@ export function SendClaimModal({
         {state === "success" && (
           <motion.div
             key="success"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            variants={scaleIn}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className="relative"
           >
+            <SuccessParticles />
             {/* Success Details */}
             <div className="space-y-3 mb-6">
               <div className="flex justify-between">
@@ -215,9 +222,10 @@ export function SendClaimModal({
         {state === "error" && (
           <motion.div
             key="error"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            variants={fadeUp}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
             className="flex flex-col items-center justify-center py-8"
           >
             <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">

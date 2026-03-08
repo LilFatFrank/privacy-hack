@@ -115,10 +115,9 @@ export default function Home() {
 
   const getBalanceDisplay = useCallback(() => {
     if (!authenticated) return "Connect Wallet";
-    if (balanceLoading || !walletAddress) return "Loading...";
     if (balance !== null) return `${formatNumber(balance)} USDC`;
     return "0 USDC";
-  }, [authenticated, balanceLoading, balance, walletAddress]);
+  }, [authenticated, balance]);
 
   const handleBalanceClick = () => {
     if (!authenticated) {
@@ -133,14 +132,16 @@ export default function Home() {
       <main className="flex flex-col items-center p-4 w-full">
         {/* Amount Display */}
         <div className="flex flex-col items-center mb-8 w-full max-w-full">
-          <div className="w-full max-w-[320px] overflow-x-auto scrollbar-hide">
-            <input
-              type="text"
-              value={amount}
-              readOnly
-              disabled
-              className="w-full text-6xl font-light text-[#121212] bg-transparent border-none outline-none text-center cursor-default select-none caret-transparent"
-            />
+          <div className="w-full max-w-[320px] overflow-x-auto scrollbar-hide flex justify-center">
+            <motion.span
+              key={amount}
+              initial={{ scale: 1.08 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring", damping: 18, stiffness: 500 }}
+              className="text-6xl font-light text-[#121212] text-center select-none"
+            >
+              {amount}
+            </motion.span>
           </div>
 
           {/* Balance / Dropdown */}
@@ -149,25 +150,34 @@ export default function Home() {
               onClick={handleBalanceClick}
               className={`mt-2 flex items-center gap-1.5 text-sm text-[#121212]/50 hover:text-[#121212]/70 transition-colors ${!authenticated ? "underline underline-offset-4 decoration-dashed" : ""}`}
             >
-              {getBalanceDisplay()}
+              {authenticated && (balanceLoading || !walletAddress) ? (
+                <span className="skeleton h-4 w-20 inline-block" />
+              ) : (
+                getBalanceDisplay()
+              )}
               {authenticated && (
-                <Image
-                  src="/assets/chevron-down-icon.svg"
-                  alt=""
-                  width={10}
-                  height={10}
-                  className={`transition-transform ${showDropdown ? "rotate-180" : ""}`}
-                />
+                <motion.div
+                  animate={{ rotate: showDropdown ? 180 : 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Image
+                    src="/assets/chevron-down-icon.svg"
+                    alt=""
+                    width={10}
+                    height={10}
+                  />
+                </motion.div>
               )}
             </button>
 
             <AnimatePresence>
               {showDropdown && authenticated && (
                 <motion.div
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.15 }}
+                  initial={{ opacity: 0, scale: 0.93, y: -8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0,
+                             transition: { type: "spring", damping: 22, stiffness: 300 } }}
+                  exit={{ opacity: 0, scale: 0.95, y: -4,
+                          transition: { duration: 0.15, ease: [0.7, 0, 0.84, 0] } }}
                   className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-[#fafafa] border border-[#121212]/10 rounded-2xl shadow-lg z-50 overflow-hidden"
                 >
                   {/* Wallet Address */}
