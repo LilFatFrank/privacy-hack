@@ -1,17 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+export const dynamic = "force-dynamic";
+
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import lazyLoad from "next/dynamic";
 import { staggerContainer, staggerItem, fadeUp } from "@/lib/motionVariants";
 import Image from "next/image";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
 import { useExportWallet } from "@privy-io/react-auth/solana";
 import { formatNumber } from "@/utils";
-import { Spinner, AddFundsModal, WithdrawModal } from "@/components";
+import { Spinner } from "@/components/Spinner";
 import { useSessionSignature } from "@/hooks/useSessionSignature";
 import { useUSDCBalance } from "@/hooks/useUSDCBalance";
 import { useSOLBalance } from "@/hooks/useSOLBalance";
+
+const AddFundsModal = lazyLoad(() => import("@/components/AddFundsModal").then(m => ({ default: m.AddFundsModal })), { ssr: false });
+const WithdrawModal = lazyLoad(() => import("@/components/WithdrawModal").then(m => ({ default: m.WithdrawModal })), { ssr: false });
 
 interface Activity {
   id: string;
@@ -41,7 +47,7 @@ interface UserData {
 
 // Status colors
 const STATUS_COLORS = {
-  open: "#CB9C00",
+  open: "#8A6A00",    // darkened from #CB9C00 — achieves 4.6:1 contrast on #fafafa (WCAG AA)
   settled: "#008834",
   cancelled: "#CB0000",
 };

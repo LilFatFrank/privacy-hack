@@ -114,11 +114,12 @@ export function SendClaimModal({
           >
             {/* Message Input */}
             <div className="mb-6">
-              <label className="text-sm text-[#121212]/50 mb-2 block">
+              <label htmlFor="claim-message" className="text-sm text-[#121212]/50 mb-2 block">
                 Add message (optional)
               </label>
               <div className="relative">
                 <input
+                  id="claim-message"
                   type="text"
                   value={message}
                   onChange={(e) => {
@@ -135,15 +136,23 @@ export function SendClaimModal({
             </div>
 
             {/* Amount Details */}
-            <div className="space-y-3 mb-8">
+            <div className="space-y-2.5 mb-8">
               <div className="flex justify-between">
                 <span className="text-[#121212]">Amount</span>
                 <span className="text-[#121212]">{formatNumber(numAmount)} USDC</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-[#121212]">Partner Fees</span>
-                <span className="text-[#121212]">~{formatNumber(partnerFee)} USDC</span>
+                <span className="text-[#121212]/70 text-sm">Network Fee</span>
+                <span className="text-[#121212]/70 text-sm">~{formatNumber(baseFee)} USDC</span>
               </div>
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="text-[#121212]/70 text-sm">Privacy Routing</span>
+                  <p className="text-[#121212]/40 text-xs mt-0.5">Hides sender address</p>
+                </div>
+                <span className="text-[#121212]/70 text-sm">~{formatNumber(numAmount * feePercent)} USDC</span>
+              </div>
+              <div className="h-px bg-[#121212]/8" />
               <div className="flex justify-between">
                 <span className="text-[#121212] font-semibold">They Receive</span>
                 <span className="text-[#121212] font-semibold">~{formatNumber(total)} USDC</span>
@@ -186,19 +195,30 @@ export function SendClaimModal({
           >
             <SuccessParticles />
             {/* Success Details */}
-            <div className="space-y-3 mb-6">
+            <div className="space-y-2.5 mb-4">
               <div className="flex justify-between">
                 <span className="text-[#121212]">Amount</span>
                 <span className="text-[#121212]">{formatNumber(numAmount)} USDC</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-[#121212]">Partner Fees</span>
-                <span className="text-[#121212]">~{formatNumber(partnerFee)} USDC</span>
+                <span className="text-[#121212]/70 text-sm">Fees</span>
+                <span className="text-[#121212]/70 text-sm">~{formatNumber(partnerFee)} USDC</span>
               </div>
+              <div className="h-px bg-[#121212]/8" />
               <div className="flex justify-between">
                 <span className="text-[#121212] font-semibold">They Receive</span>
                 <span className="text-[#121212] font-semibold">~{formatNumber(total)} USDC</span>
               </div>
+            </div>
+
+            {/* Privacy confirmation */}
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#121212]/5 mb-4">
+              <svg width="12" height="14" viewBox="0 0 12 14" fill="none" aria-hidden="true">
+                <path d="M6 0.5L0.5 2.75V6.5C0.5 9.7 2.9 12.7 6 13.5C9.1 12.7 11.5 9.7 11.5 6.5V2.75L6 0.5Z" fill="#121212" fillOpacity="0.5" />
+              </svg>
+              <p className="text-xs text-[#121212]/60">
+                Sent privately — your wallet address was not revealed.
+              </p>
             </div>
 
             {/* Copy Link Button */}
@@ -222,6 +242,7 @@ export function SendClaimModal({
         {state === "error" && (
           <motion.div
             key="error"
+            role="alert"
             variants={fadeUp}
             initial="hidden"
             animate="visible"

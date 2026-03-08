@@ -1,20 +1,23 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { usePrivy } from "@privy-io/react-auth";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import lazyLoad from "next/dynamic";
 import Image from "next/image";
 import { useSessionSignature } from "@/hooks/useSessionSignature";
 import { useUSDCBalance } from "@/hooks/useUSDCBalance";
 import { useUserRegistration } from "@/hooks/useUserRegistration";
 import { formatNumber } from "@/utils";
-import {
-  ActionButton,
-  NumberPad,
-  SendModal,
-  ReceiveModal,
-  SendClaimModal,
-} from "@/components";
+import { ActionButton } from "@/components/ActionButton";
+import { NumberPad } from "@/components/NumberPad";
+import { PrivacyBadge } from "@/components/PrivacyBadge";
+
+const SendModal = lazyLoad(() => import("@/components/SendModal").then(m => ({ default: m.SendModal })), { ssr: false });
+const ReceiveModal = lazyLoad(() => import("@/components/ReceiveModal").then(m => ({ default: m.ReceiveModal })), { ssr: false });
+const SendClaimModal = lazyLoad(() => import("@/components/SendClaimModal").then(m => ({ default: m.SendClaimModal })), { ssr: false });
 
 type ModalType = "send" | "receive" | "sendClaim" | null;
 
@@ -113,7 +116,7 @@ export default function Home() {
     return `${addr.slice(0, 4)}...${addr.slice(-4)}`;
   };
 
-  const getBalanceDisplay = useCallback(() => {
+  const balanceDisplay = useMemo(() => {
     if (!authenticated) return "Connect Wallet";
     if (balance !== null) return `${formatNumber(balance)} USDC`;
     return "0 USDC";
@@ -130,6 +133,11 @@ export default function Home() {
   return (
     <>
       <main className="flex flex-col items-center p-4 w-full">
+        {/* Privacy Badge */}
+        <div className="mb-6">
+          <PrivacyBadge />
+        </div>
+
         {/* Amount Display */}
         <div className="flex flex-col items-center mb-8 w-full max-w-full">
           <div className="w-full max-w-[320px] overflow-x-auto scrollbar-hide flex justify-center">
@@ -148,17 +156,20 @@ export default function Home() {
           <div className="relative" ref={dropdownRef}>
             <button
               onClick={handleBalanceClick}
+              aria-label={authenticated ? `Available Balance: ${balanceDisplay}` : "Connect wallet"}
               className={`mt-2 flex items-center gap-1.5 text-sm text-[#121212]/50 hover:text-[#121212]/70 transition-colors ${!authenticated ? "underline underline-offset-4 decoration-dashed" : ""}`}
             >
               {authenticated && (balanceLoading || !walletAddress) ? (
-                <span className="skeleton h-4 w-20 inline-block" />
+                <span className="skeleton h-4 w-20 inline-block" aria-hidden="true" />
+              ) : authenticated ? (
+                <span>Available Balance: <span className="font-medium text-[#121212]/70">{balanceDisplay}</span></span>
               ) : (
-                getBalanceDisplay()
+                balanceDisplay
               )}
               {authenticated && (
                 <motion.div
                   animate={{ rotate: showDropdown ? 180 : 0 }}
-                  transition={{ duration: 0.2 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
                 >
                   <Image
                     src="/assets/chevron-down-icon.svg"
@@ -254,38 +265,16 @@ export default function Home() {
 
         {/* Action Buttons */}
         <div className="flex gap-4 w-full">
-          <motion.div
-            className="flex-1"
-            animate={
-              authenticated && (!hasValidAmount || exceedsBalance)
-                ? { x: [0, -4, 4, -4, 4, 0] }
-                : {}
-            }
-            transition={{ duration: 0.4 }}
-            key={`send-${authenticated && (!hasValidAmount || exceedsBalance) ? "shake" : "idle"}`}
-          >
-            <ActionButton
-              variant="send"
-              onClick={() => handleActionClick("send")}
-              disabled={authenticated && (!hasValidAmount || exceedsBalance)}
-            />
-          </motion.div>
-          <motion.div
-            className="flex-1"
-            animate={
-              authenticated && !hasValidAmount
-                ? { x: [0, -4, 4, -4, 4, 0] }
-                : {}
-            }
-            transition={{ duration: 0.4 }}
-            key={`receive-${authenticated && !hasValidAmount ? "shake" : "idle"}`}
-          >
-            <ActionButton
-              variant="receive"
-              onClick={() => handleActionClick("receive")}
-              disabled={authenticated && !hasValidAmount}
-            />
-          </motion.div>
+          <ActionButton
+            variant="send"
+            onClick={() => handleActionClick("send")}
+            disabled={authenticated && (!hasValidAmount || exceedsBalance)}
+          />
+          <ActionButton
+            variant="receive"
+            onClick={() => handleActionClick("receive")}
+            disabled={authenticated && !hasValidAmount}
+          />
         </div>
       </main>
 

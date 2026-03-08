@@ -9,14 +9,19 @@ interface ActionButtonProps {
   disabled?: boolean;
 }
 
+const LABELS: Record<ActionButtonProps["variant"], { text: string; icon: string }> = {
+  send:    { text: "Send",    icon: "/assets/send.svg"    },
+  receive: { text: "Receive", icon: "/assets/receive.svg" },
+};
+
 export function ActionButton({ variant, onClick, disabled }: ActionButtonProps) {
-  const icon = variant === "send" ? "/assets/send.svg" : "/assets/receive.svg";
-  const alt = variant === "send" ? "Send" : "Receive";
+  const { text, icon } = LABELS[variant];
 
   return (
     <motion.button
       onClick={onClick}
       disabled={disabled}
+      aria-label={text}
       whileHover={
         disabled
           ? {}
@@ -27,9 +32,10 @@ export function ActionButton({ variant, onClick, disabled }: ActionButtonProps) 
           ? {}
           : { scale: 0.95, transition: { type: "spring", damping: 18, stiffness: 500 } }
       }
-      className="w-full h-10 bg-[#121212] rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_4px_12px_rgba(18,18,18,0.15)]"
+      className="w-full h-11 bg-[#121212] rounded-full flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_4px_12px_rgba(18,18,18,0.15)]"
     >
-      <Image src={icon} alt={alt} width={24} height={16} />
+      <Image src={icon} alt="" aria-hidden="true" width={20} height={14} />
+      <span className="text-[#fafafa] text-sm font-semibold">{text}</span>
     </motion.button>
   );
 }
