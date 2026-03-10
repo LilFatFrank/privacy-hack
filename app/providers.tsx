@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { PrivyProvider } from "@privy-io/react-auth";
 import { toSolanaWalletConnectors } from "@privy-io/react-auth/solana";
+import { createSolanaRpc, createSolanaRpcSubscriptions } from "@solana/kit";
 
 // Create connectors once on client side only
 const solanaConnectors =
@@ -69,7 +70,17 @@ export default function Providers({ children }: { children: React.ReactNode }) {
             connectors: solanaConnectors,
           },
         },
-        solana: {},
+        solana: {
+          rpcs: {
+            "solana:mainnet": {
+              rpc: createSolanaRpc(process.env.NEXT_PUBLIC_RPC_URL || "https://api.mainnet-beta.solana.com"),
+              rpcSubscriptions: createSolanaRpcSubscriptions(
+                (process.env.NEXT_PUBLIC_RPC_URL || "https://api.mainnet-beta.solana.com")
+                  .replace("https://", "wss://")
+              ),
+            },
+          },
+        },
       }}
     >
       {children}
